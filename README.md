@@ -82,6 +82,7 @@ Open http://127.0.0.1:8000.
 Variables read by `main.py` today (names only; values go in `.env`, which must never be committed):
 
 - `SARVAM_API_KEY` (required)
+- `APP_PASSWORD` (required; shared team password. Unset means the site shows the login page but nobody can sign in)
 - `SARVAM_STT_MODEL`, `SARVAM_LLM_MODEL`
 - `STT_INR_PER_HOUR`, `LLM_INR_PER_M_INPUT`, `LLM_INR_PER_M_OUTPUT`
 - `LLM_REASONING_EFFORT`, `LLM_MAX_TOKENS`
@@ -174,7 +175,7 @@ Live URL: https://dhaga.ctrlaltexist.com (AWS EC2 `t3.micro` in `ap-south-1`, bu
 
 Check it is up: `curl <live-url>/health` returns `{"status":"ok"}`. This needs no API key.
 
-Redeploy: every push or merge to `main` deploys automatically (`.github/workflows/deploy.yml`). The workflow opens SSH to its own runner IP for the duration of the deploy, copies the app, rebuilds the container, closes SSH, then checks `/health`. Repo secrets it needs: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` (an IAM user that can edit the security group), `EC2_SSH_KEY` (the private key contents) and `SARVAM_API_KEY`.
+Redeploy: every push or merge to `main` deploys automatically (`.github/workflows/deploy.yml`). The workflow opens SSH to its own runner IP for the duration of the deploy, copies the app, rebuilds the container, closes SSH, then checks `/health`. Repo secrets it needs: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` (an IAM user that can edit the security group), `EC2_SSH_KEY` (the private key contents), `SARVAM_API_KEY` and `APP_PASSWORD`.
 
 Manual redeploy, from the repo root:
 
@@ -190,3 +191,5 @@ Secrets: kept in GitHub repo secrets only. Each deploy writes `SARVAM_API_KEY` t
 - Optional overrides: `SARVAM_STT_MODEL`, `SARVAM_LLM_MODEL`, `STT_INR_PER_HOUR`, `LLM_INR_PER_M_INPUT`, `LLM_INR_PER_M_OUTPUT`, `LLM_REASONING_EFFORT`, `LLM_MAX_TOKENS`, `INR_PER_USD`
 
 Cold start: the EC2 instance stays on, so there is no cold start. Before a demo, open `/health` once to confirm it answers.
+
+Password gate: the site first shows a login page; the shared password is the `APP_PASSWORD` GitHub secret (generate with `python -c "import secrets; print(secrets.token_urlsafe(16))"`). A correct password sets a 30-day HttpOnly cookie. `/health` stays open. To rotate, update the secret and re-run the deploy; everyone is signed out.

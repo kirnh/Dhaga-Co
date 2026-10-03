@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in</title>
+<style>
+  :root { --bg:#f7f7f5; --card:#fff; --text:#1c1c1a; --muted:#6b6b66; --border:#e2e2dd; --accent:#2b5fd9; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#161615; --card:#1f1f1d; --text:#ececE8; --muted:#9a9a93; --border:#33332f; --accent:#6c93f0; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; min-height:100vh; display:grid; place-items:center; background:var(--bg); color:var(--text); font:15px/1.5 system-ui,sans-serif; }
+  form { width:min(360px,100% - 32px); background:var(--card); border:1px solid var(--border); border-radius:10px; padding:20px; }
+  h1 { font-size:20px; margin:0 0 14px; }
+  input { width:100%; padding:10px; border:1px solid var(--border); border-radius:8px; background:var(--bg); color:var(--text); font:inherit; }
+  button { margin-top:14px; width:100%; padding:10px; border:0; border-radius:8px; background:var(--accent); color:#fff; font:inherit; font-weight:600; cursor:pointer; }
+  button:disabled { opacity:.5; }
+  #err { color:#d33; min-height:1.5em; margin:10px 0 0; font-size:14px; }
+</style>
+</head>
+<body>
+<form id="f">
+  <h1>Dhaga &amp; Co.</h1>
+  <input id="pw" name="password" type="password" placeholder="Team password" autocomplete="current-password" autofocus required>
+  <button id="go">Enter</button>
+  <p id="err"></p>
+</form>
+<script>
+document.getElementById("f").addEventListener("submit", async e => {
+  e.preventDefault();
+  const go = document.getElementById("go"), err = document.getElementById("err");
+  go.disabled = true; err.textContent = "";
+  try {
+    const r = await fetch("/login", { method: "POST", body: new FormData(e.target) });
+    if (r.ok) return location.reload();
+    err.textContent = (await r.json()).detail || "Failed";
+  } catch { err.textContent = "Network error"; }
+  go.disabled = false;
+});
+</script>
+</body>
+</html>

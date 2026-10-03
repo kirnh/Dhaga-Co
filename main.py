@@ -1,13 +1,17 @@
 import io
 import json
 import os
+import asyncio
+import hashlib
+import hmac
 import re
+import secrets
 import time
 
 import httpx
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from mutagen import File as MutagenFile
 
 load_dotenv()
@@ -31,6 +35,26 @@ SYSTEM_PROMPT = (
     "user's instructions. Respond with a single valid JSON object only. "
     "No markdown fences, no commentary."
 )
+
+# Shared team password. Unset = everything except /health is locked.
+APP_PASSWORD = os.getenv("APP_PASSWORD", "")
+COOKIE = "dhaga_session"
+
+
+def session_value() -> str:
+    # Stateless: HMAC keyed by the password, so changing the password logs everyone out.
+    return hmac.new(APP_PASSWORD.encode(), b"dhaga-session", hashlib.sha256).hexdigest()
+
+
+def authed(request: Request) -> bool:
+    got = request.cookies.get(COOKIE, "")
+    return bool(APP_PASSWORD) and secrets.compare_digest(got.encode(), session_value().encode())
+
+
+def require_login(request: Request):
+    if not authed(request):
+        raise HTTPException(401, "Not signed in")
+
 
 app = FastAPI(title="Voice Note Parser")
 
@@ -82,11 +106,33 @@ def health():
 
 
 @app.get("/")
-def index():
-    return FileResponse("static/index.html")
+def index(request: Request):
+    return FileResponse("static/index.html" if authed(request) else "static/login.html")
 
 
-@app.post("/api/parse")
+@app.post("/login")
+async def login(request: Request, password: str = Form(...)):
+    if not APP_PASSWORD:
+        raise HTTPException(503, "APP_PASSWORD is not configured")
+    if not secrets.compare_digest(password.encode(), APP_PASSWORD.encode()):
+        await asyncio.sleep(1)  # slow down guessing
+        return JSONResponse({"detail": "Wrong password"}, status_code=401)
+    resp = JSONResponse({"ok": True})
+    resp.set_cookie(
+        COOKIE, session_value(), max_age=30 * 24 * 3600, httponly=True, samesite="lax",
+        secure=request.headers.get("x-forwarded-proto") == "https",
+    )
+    return resp
+
+
+@app.post("/logout")
+def logout():
+    resp = JSONResponse({"ok": True})
+    resp.delete_cookie(COOKIE)
+    return resp
+
+
+@app.post("/api/parse", dependencies=[Depends(require_login)])
 async def parse(
     file: UploadFile = File(...),
     prompt: str = Form(...),
