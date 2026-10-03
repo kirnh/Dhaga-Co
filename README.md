@@ -174,7 +174,7 @@ Live URL: https://dhaga.ctrlaltexist.com (AWS EC2 `t3.micro` in `ap-south-1`, bu
 
 Check it is up: `curl <live-url>/health` returns `{"status":"ok"}`. This needs no API key.
 
-Redeploy: every push or merge to `main` deploys automatically (`.github/workflows/deploy.yml`). The workflow opens SSH to its own runner IP for the duration of the deploy, copies the app, rebuilds the container, closes SSH, then checks `/health`. Repo secrets it needs: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` (a deploy-only IAM user) and `EC2_SSH_KEY` (the private key contents).
+Redeploy: every push or merge to `main` deploys automatically (`.github/workflows/deploy.yml`). The workflow opens SSH to its own runner IP for the duration of the deploy, copies the app, rebuilds the container, closes SSH, then checks `/health`. Repo secrets it needs: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` (an IAM user that can edit the security group), `EC2_SSH_KEY` (the private key contents) and `SARVAM_API_KEY`.
 
 Manual redeploy, from the repo root:
 
@@ -185,7 +185,7 @@ ssh -i ~/.ssh/dhaga-key.pem ubuntu@<elastic-ip> 'cd app && docker build -q -t dh
 
 Caddy (HTTPS, auto-renewing certificate) proxies the domain to the container. SSH is open only to one IP; if yours changes, update the `dhaga-sg` security group. Health check path: `/health`.
 
-Secrets: not set yet. When needed, add `SARVAM_API_KEY` to a root-only env file on the instance and pass it with `docker run --env-file`, never in the repo or the image.
+Secrets: kept in GitHub repo secrets only. Each deploy writes `SARVAM_API_KEY` to a root-only env file on the server (`/home/ubuntu/dhaga.env`, mode 600) and starts the container with `--env-file`. Never in the repo or the image. To rotate the key, update the GitHub secret and re-run the deploy.
 - `SARVAM_API_KEY` (required for the voice parser)
 - Optional overrides: `SARVAM_STT_MODEL`, `SARVAM_LLM_MODEL`, `STT_INR_PER_HOUR`, `LLM_INR_PER_M_INPUT`, `LLM_INR_PER_M_OUTPUT`, `LLM_REASONING_EFFORT`, `LLM_MAX_TOKENS`, `INR_PER_USD`
 
