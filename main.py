@@ -14,7 +14,10 @@ from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, Upload
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from mutagen import File as MutagenFile
 
-load_dotenv()
+load_dotenv()  # before importing returns, which reads its settings from the environment
+
+import returns  # noqa: E402
+import taxonomy  # noqa: E402
 
 API_KEY = os.getenv("SARVAM_API_KEY")
 BASE_URL = "https://api.sarvam.ai"
@@ -29,6 +32,7 @@ LLM_INR_PER_M_OUTPUT = float(os.getenv("LLM_INR_PER_M_OUTPUT", "73.20"))
 LLM_REASONING_EFFORT = os.getenv("LLM_REASONING_EFFORT", "low")  # reasoning tokens are billed as output
 LLM_MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", "8192"))
 INR_PER_USD = float(os.getenv("INR_PER_USD", "88.0"))
+RETURN_TIMEOUT_S = float(os.getenv("RETURN_TIMEOUT_S", "30"))  # per Sarvam call on the returns screen
 
 SYSTEM_PROMPT = (
     "You extract structured data from a voice-note transcript according to the "
@@ -56,7 +60,7 @@ def require_login(request: Request):
         raise HTTPException(401, "Not signed in")
 
 
-app = FastAPI(title="Voice Note Parser")
+app = FastAPI(title="Dhaga & Co. Returns")
 
 
 def headers() -> dict:
@@ -100,6 +104,97 @@ def parse_json(text: str):
     return None
 
 
+class UpstreamError(Exception):
+    """A Sarvam call failed (bad status, timeout or no connection)."""
+
+    def __init__(self, stage: str, status: int | None, detail: str):
+        super().__init__(f"{stage} failed: {detail}")
+        self.stage, self.status, self.detail = stage, status, detail
+
+
+def http_client(timeout: float = 300) -> httpx.AsyncClient:
+    return httpx.AsyncClient(timeout=timeout)
+
+
+async def _post(client: httpx.AsyncClient, stage: str, path: str, **kwargs) -> httpx.Response:
+    try:
+        r = await client.post(f"{BASE_URL}{path}", headers=headers(), **kwargs)
+    except httpx.HTTPError as e:  # timeout, DNS, connection reset...
+        raise UpstreamError(stage, None, type(e).__name__)
+    if r.status_code != 200:
+        raise UpstreamError(stage, r.status_code, r.text)
+    return r
+
+
+async def transcribe(client, audio: bytes, filename: str, content_type: str | None,
+                     language_code: str = "unknown") -> tuple[dict, dict]:
+    """Sarvam speech-to-text. Returns (response JSON, cost row)."""
+    t0 = time.monotonic()
+    r = await _post(
+        client, "Speech-to-text", "/speech-to-text",
+        files={"file": (filename, audio, content_type or "audio/mpeg")},
+        data={"model": STT_MODEL, "language_code": language_code, "with_timestamps": "true"},
+    )
+    latency = time.monotonic() - t0
+    stt = r.json()
+    secs = audio_seconds(audio)
+    if secs is None:  # fall back to last timestamp
+        ends = (stt.get("timestamps") or {}).get("end_time_seconds") or []
+        secs = max(ends) if ends else 0.0
+    row = cost_row("Speech-to-text", STT_MODEL, "audio sec", round(secs, 1),
+                   f"₹{STT_INR_PER_HOUR}/hr", secs / 3600 * STT_INR_PER_HOUR, latency)
+    return stt, row
+
+
+_structured_output_ok = True  # switched off if Sarvam rejects response_format
+
+
+async def chat(client, messages: list[dict], *, step: str, model: str, temperature: float,
+               reasoning_effort: str | None, max_tokens: int,
+               response_format: dict | None = None) -> tuple[str, dict]:
+    """Sarvam chat completion. Returns (reply text, cost row)."""
+    global _structured_output_ok
+    body = {"model": model, "temperature": temperature, "reasoning_effort": reasoning_effort,
+            "max_tokens": max_tokens, "messages": messages}
+    if response_format and _structured_output_ok:
+        body["response_format"] = response_format
+    t0 = time.monotonic()
+    try:
+        r = await _post(client, step, "/v1/chat/completions", json=body)
+    except UpstreamError as e:
+        # If the schema itself is what Sarvam rejected, carry on without it:
+        # our own validation still checks every reply.
+        if e.status in (400, 422) and "response_format" in body:
+            _structured_output_ok = False
+            del body["response_format"]
+            r = await _post(client, step, "/v1/chat/completions", json=body)
+        else:
+            raise
+    latency = time.monotonic() - t0
+    data = r.json()
+    choice = data["choices"][0]
+    content = choice["message"].get("content") or ""
+    usage = data.get("usage") or {}
+    tin, tout = usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0)
+    inr = tin / 1e6 * LLM_INR_PER_M_INPUT + tout / 1e6 * LLM_INR_PER_M_OUTPUT
+    row = cost_row(step, model, "tokens", f"{tin} in / {tout} out",
+                   f"₹{LLM_INR_PER_M_INPUT}/₹{LLM_INR_PER_M_OUTPUT} per 1M", inr, latency)
+    row["finish_reason"] = choice.get("finish_reason")
+    return content, row
+
+
+def cost_summary(steps: list[dict]) -> dict:
+    total_inr = sum(s["cost_inr"] for s in steps)
+    return {"steps": steps, "total_inr": round(total_inr, 6), "total_usd": round(total_inr / INR_PER_USD, 6)}
+
+
+def returns_llm(client):
+    """The Sarvam-backed model call handed to returns.classify_return (temperature 0)."""
+    async def llm(messages, **call):
+        return await chat(client, messages, temperature=0, **call)
+    return llm
+
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
@@ -138,78 +233,88 @@ async def parse(
     prompt: str = Form(...),
     language_code: str = Form("unknown"),
 ):
-    h = headers()
+    headers()  # 500 early if the key is missing
     audio = await file.read()
     if not audio:
         raise HTTPException(400, "Empty file")
 
-    steps = []
-    async with httpx.AsyncClient(timeout=300) as client:
-        # Step 1: speech-to-text
-        t0 = time.monotonic()
-        r = await client.post(
-            f"{BASE_URL}/speech-to-text",
-            headers=h,
-            files={"file": (file.filename, audio, file.content_type or "audio/mpeg")},
-            data={"model": STT_MODEL, "language_code": language_code, "with_timestamps": "true"},
-        )
-        stt_latency = time.monotonic() - t0
-        if r.status_code != 200:
-            raise HTTPException(r.status_code, f"Speech-to-text failed: {r.text}")
-        stt = r.json()
-        transcript = stt.get("transcript", "")
+    try:
+        async with http_client() as client:
+            stt, stt_row = await transcribe(client, audio, file.filename, file.content_type, language_code)
+            transcript = stt.get("transcript", "")
+            content, llm_row = await chat(
+                client,
+                [{"role": "system", "content": SYSTEM_PROMPT},
+                 {"role": "user", "content": f"Instructions:\n{prompt}\n\nTranscript:\n{transcript}"}],
+                step="LLM extraction", model=LLM_MODEL, temperature=0.2,
+                reasoning_effort=LLM_REASONING_EFFORT, max_tokens=LLM_MAX_TOKENS,
+            )
+    except UpstreamError as e:
+        raise HTTPException(e.status or 502, str(e))
+    if llm_row.pop("finish_reason") == "length" and not content:
+        raise HTTPException(502, "LLM hit the token limit before producing output (reasoning used the budget). Raise LLM_MAX_TOKENS or lower LLM_REASONING_EFFORT.")
 
-        secs = audio_seconds(audio)
-        if secs is None:  # fall back to last timestamp
-            ends = (stt.get("timestamps") or {}).get("end_time_seconds") or []
-            secs = max(ends) if ends else 0.0
-        stt_inr = secs / 3600 * STT_INR_PER_HOUR
-        steps.append(
-            cost_row("Speech-to-text", STT_MODEL, "audio sec", round(secs, 1),
-                     f"₹{STT_INR_PER_HOUR}/hr", stt_inr, stt_latency)
-        )
-
-        # Step 2: LLM extraction
-        t0 = time.monotonic()
-        r = await client.post(
-            f"{BASE_URL}/v1/chat/completions",
-            headers=h,
-            json={
-                "model": LLM_MODEL,
-                "temperature": 0.2,
-                "reasoning_effort": LLM_REASONING_EFFORT,
-                "max_tokens": LLM_MAX_TOKENS,
-                "messages": [
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": f"Instructions:\n{prompt}\n\nTranscript:\n{transcript}"},
-                ],
-            },
-        )
-        llm_latency = time.monotonic() - t0
-        if r.status_code != 200:
-            raise HTTPException(r.status_code, f"LLM call failed: {r.text}")
-        chat = r.json()
-        choice = chat["choices"][0]
-        content = choice["message"].get("content") or ""
-        if choice.get("finish_reason") == "length" and not content:
-            raise HTTPException(502, "LLM hit the token limit before producing output (reasoning used the budget). Raise LLM_MAX_TOKENS or lower LLM_REASONING_EFFORT.")
-        usage = chat.get("usage") or {}
-        tin, tout = usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0)
-        llm_inr = tin / 1e6 * LLM_INR_PER_M_INPUT + tout / 1e6 * LLM_INR_PER_M_OUTPUT
-        steps.append(
-            cost_row("LLM extraction", LLM_MODEL, "tokens", f"{tin} in / {tout} out",
-                     f"₹{LLM_INR_PER_M_INPUT}/₹{LLM_INR_PER_M_OUTPUT} per 1M", llm_inr, llm_latency)
-        )
-
-    total_inr = sum(s["cost_inr"] for s in steps)
     return {
         "transcript": transcript,
         "detected_language": stt.get("language_code"),
         "result": parse_json(content),
         "raw_result": content,
-        "costs": {
-            "steps": steps,
-            "total_inr": round(total_inr, 6),
-            "total_usd": round(total_inr / INR_PER_USD, 6),
-        },
+        "costs": cost_summary([stt_row, llm_row]),
+    }
+
+
+@app.get("/api/returns/taxonomy", dependencies=[Depends(require_login)])
+def returns_taxonomy():
+    """First-level categories and the reasons under each, for the two dropdowns."""
+    return taxonomy.as_menu()
+
+
+PENDING_MESSAGE = "We couldn't analyse this right now. Your return reason has been saved for retry."
+
+
+@app.post("/api/returns/analyse", dependencies=[Depends(require_login)])
+async def analyse_return(
+    text: str | None = Form(None),
+    file: UploadFile | None = File(None),
+    language_code: str = Form("unknown"),  # "unknown" = Sarvam auto-detects the language
+):
+    """Customer return reason as text OR a voice note -> structured reason.
+
+    Voice is transcribed first; after that both inputs go through the same
+    returns.classify_return() call.
+    """
+    headers()
+    audio = await file.read() if file is not None and file.filename else b""
+    text = (text or "").strip()
+    if bool(audio) == bool(text):
+        raise HTTPException(400, "Send either a typed reason or a voice note (one, not both).")
+
+    steps: list[dict] = []
+    source = {"mode": "voice" if audio else "text", "text": text, "detected_language": None}
+    try:
+        async with http_client(RETURN_TIMEOUT_S) as client:
+            if audio:
+                stt, row = await transcribe(client, audio, file.filename, file.content_type, language_code)
+                steps.append(row)
+                source["text"] = (stt.get("transcript") or "").strip()
+                source["detected_language"] = stt.get("language_code")
+                if not source["text"]:
+                    raise HTTPException(422, "We couldn't hear any speech in that recording. Please try again or type your reason.")
+            result, llm_steps = await returns.classify_return(source["text"], returns_llm(client))
+            steps += llm_steps
+    except UpstreamError as e:
+        # Fail visibly, never as a 401 (the page treats 401 as "signed out").
+        # Whatever we already have (typed text or transcript) goes back so nothing is lost.
+        return JSONResponse(status_code=503, content={
+            "status": "pending", "message": PENDING_MESSAGE, "failed_step": e.stage,
+            "input": source, "costs": cost_summary(steps),
+        })
+    for s in steps:
+        s.pop("finish_reason", None)
+    return {
+        "status": result.status,
+        "input": source,
+        "result": result.model_dump(),
+        "costs": cost_summary(steps),
+        "meta": returns.run_meta(),
     }
