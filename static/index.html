@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Voice Note Parser</title>
+<style>
+  :root { --bg:#f7f7f5; --card:#fff; --text:#1c1c1a; --muted:#6b6b66; --border:#e2e2dd; --accent:#2b5fd9; --code:#f0f0ec; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#161615; --card:#1f1f1d; --text:#ececE8; --muted:#9a9a93; --border:#33332f; --accent:#6c93f0; --code:#292926; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.5 system-ui,sans-serif; }
+  main { max-width:820px; margin:0 auto; padding:24px 16px 64px; }
+  h1 { font-size:22px; margin:0 0 16px; }
+  h2 { font-size:13px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin:0 0 10px; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:16px; margin-bottom:16px; }
+  label { display:block; font-weight:600; margin:12px 0 6px; }
+  label:first-child { margin-top:0; }
+  input[type=file], textarea, select { width:100%; padding:9px; border:1px solid var(--border); border-radius:8px; background:var(--bg); color:var(--text); font:inherit; }
+  textarea { min-height:110px; resize:vertical; }
+  button { margin-top:14px; padding:10px 18px; border:0; border-radius:8px; background:var(--accent); color:#fff; font:inherit; font-weight:600; cursor:pointer; }
+  button:disabled { opacity:.5; cursor:wait; }
+  button.ghost { background:var(--code); color:var(--text); margin:0; padding:4px 10px; font-size:13px; }
+  pre { background:var(--code); padding:12px; border-radius:8px; overflow:auto; margin:0; white-space:pre-wrap; word-break:break-word; }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th, td { text-align:left; padding:8px 6px; border-bottom:1px solid var(--border); }
+  th { color:var(--muted); font-weight:600; }
+  td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; }
+  tfoot td { font-weight:700; border-bottom:0; }
+  .row { display:flex; justify-content:space-between; align-items:center; }
+  .err { color:#d33; }
+  .hidden { display:none; }
+  .tablewrap { overflow-x:auto; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Voice Note Parser</h1>
+
+  <form id="form" class="card">
+    <label for="file">Voice note</label>
+    <input id="file" type="file" accept="audio/*,.m4a,.mp3,.wav,.ogg,.opus,.flac,.aac,.webm" required>
+
+    <label for="lang">Language</label>
+    <select id="lang">
+      <option value="unknown">Auto-detect</option>
+      <option value="en-IN">English (India)</option>
+      <option value="hi-IN">Hindi</option>
+      <option value="kn-IN">Kannada</option>
+      <option value="ta-IN">Tamil</option>
+      <option value="te-IN">Telugu</option>
+      <option value="ml-IN">Malayalam</option>
+      <option value="mr-IN">Marathi</option>
+      <option value="bn-IN">Bengali</option>
+      <option value="gu-IN">Gujarati</option>
+      <option value="pa-IN">Punjabi</option>
+    </select>
+
+    <label for="prompt">Prompt</label>
+    <textarea id="prompt" required>Extract: a one-line summary, action items (with owner and due date if mentioned), people and companies mentioned, and any amounts of money.</textarea>
+
+    <button id="go" type="submit">Parse</button>
+    <span id="status" class="err"></span>
+  </form>
+
+  <section id="out" class="hidden">
+    <div class="card">
+      <div class="row"><h2>Parsed result</h2><button class="ghost" id="copy" type="button">Copy JSON</button></div>
+      <pre id="result"></pre>
+    </div>
+    <div class="card">
+      <h2>Transcript <span id="detected" style="text-transform:none;letter-spacing:0"></span></h2>
+      <pre id="transcript"></pre>
+    </div>
+    <div class="card">
+      <h2>API cost</h2>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>Step</th><th>Model</th><th>Usage</th><th>Rate</th><th class="num">Time</th><th class="num">₹</th><th class="num">$</th></tr></thead>
+          <tbody id="costs"></tbody>
+          <tfoot><tr><td colspan="5">Total</td><td class="num" id="tinr"></td><td class="num" id="tusd"></td></tr></tfoot>
+        </table>
+      </div>
+      <p style="color:var(--muted);font-size:13px;margin:10px 0 0">Estimated from Sarvam's published rates (usage × rate); Sarvam doesn't return cost in responses. Check your dashboard for billed amounts.</p>
+    </div>
+  </section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+let lastJson = "";
+
+$("form").addEventListener("submit", async e => {
+  e.preventDefault();
+  $("go").disabled = true; $("go").textContent = "Parsing…"; $("status").textContent = "";
+  const fd = new FormData();
+  fd.append("file", $("file").files[0]);
+  fd.append("prompt", $("prompt").value);
+  fd.append("language_code", $("lang").value);
+  try {
+    const r = await fetch("/api/parse", { method: "POST", body: fd });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || r.statusText);
+    render(d);
+  } catch (err) {
+    $("status").textContent = " " + err.message;
+  } finally {
+    $("go").disabled = false; $("go").textContent = "Parse";
+  }
+});
+
+function render(d) {
+  $("out").classList.remove("hidden");
+  lastJson = d.result ? JSON.stringify(d.result, null, 2) : d.raw_result;
+  $("result").textContent = lastJson + (d.result ? "" : "\n\n(model output was not valid JSON)");
+  $("transcript").textContent = d.transcript;
+  $("detected").textContent = d.detected_language ? "· " + d.detected_language : "";
+  $("costs").innerHTML = "";
+  for (const s of d.costs.steps) {
+    const tr = document.createElement("tr");
+    [s.step, s.model, s.usage, s.rate, s.latency_s + "s", s.cost_inr.toFixed(4), s.cost_usd.toFixed(5)]
+      .forEach((v, i) => { const td = document.createElement("td"); td.textContent = v; if (i >= 4) td.className = "num"; tr.appendChild(td); });
+    $("costs").appendChild(tr);
+  }
+  $("tinr").textContent = "₹" + d.costs.total_inr.toFixed(4);
+  $("tusd").textContent = "$" + d.costs.total_usd.toFixed(5);
+}
+
+$("copy").addEventListener("click", () => navigator.clipboard.writeText(lastJson));
+</script>
+</body>
+</html>

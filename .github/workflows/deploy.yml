@@ -1,0 +1,84 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# One deploy at a time; a newer push waits for the running one.
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ap-south-1
+  SECURITY_GROUP_ID: sg-0d6a6b5489b51179e
+  EC2_HOST: 15.252.247.104
+  EC2_USER: ubuntu
+  # Public host key of the server, so the runner does not trust it blindly.
+  EC2_HOST_KEY: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAII5FvWiDYgc6rv5uM5WAO4Pr3blNmNRiGVRnT/l/vB69
+  HEALTH_URL: https://dhaga.ctrlaltexist.com/health
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up SSH
+        env:
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$EC2_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          echo "$EC2_HOST $EC2_HOST_KEY" > ~/.ssh/known_hosts
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Open SSH to this runner only
+        run: |
+          CI_IP=$(curl -fsS https://checkip.amazonaws.com)
+          echo "CI_IP=$CI_IP" >> "$GITHUB_ENV"
+          aws ec2 authorize-security-group-ingress \
+            --group-id "$SECURITY_GROUP_ID" \
+            --ip-permissions "IpProtocol=tcp,FromPort=22,ToPort=22,IpRanges=[{CidrIp=${CI_IP}/32,Description=github-actions-deploy}]"
+
+      - name: Copy app and rebuild
+        run: |
+          SSH="ssh -i $HOME/.ssh/deploy_key -o ConnectTimeout=15"
+          scp -i ~/.ssh/deploy_key -r main.py static pyproject.toml uv.lock .python-version Dockerfile .dockerignore \
+            "$EC2_USER@$EC2_HOST:/home/ubuntu/app/"
+          $SSH "$EC2_USER@$EC2_HOST" '
+            set -e
+            cd app
+            docker build -q -t dhaga:new .
+            docker tag dhaga:new dhaga:latest
+            docker rm -f dhaga >/dev/null 2>&1 || true
+            if [ -f /home/ubuntu/dhaga.env ]; then ENVF="--env-file /home/ubuntu/dhaga.env"; fi
+            docker run -d --name dhaga --restart unless-stopped $ENVF -p 127.0.0.1:7860:7860 dhaga:latest
+            docker image prune -f >/dev/null
+          '
+
+      - name: Close SSH for this runner
+        if: always()
+        run: |
+          if [ -n "${CI_IP:-}" ]; then
+            aws ec2 revoke-security-group-ingress \
+              --group-id "$SECURITY_GROUP_ID" \
+              --ip-permissions "IpProtocol=tcp,FromPort=22,ToPort=22,IpRanges=[{CidrIp=${CI_IP}/32}]" || true
+          fi
+
+      - name: Check the live site
+        run: |
+          for i in $(seq 1 12); do
+            if curl -fsS "$HEALTH_URL" | grep -q '"status":"ok"'; then echo "healthy"; exit 0; fi
+            sleep 5
+          done
+          echo "health check failed"; exit 1
