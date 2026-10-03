@@ -3,132 +3,386 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Voice Note Parser</title>
+<title>Dhaga &amp; Co. Returns</title>
 <style>
-  :root { --bg:#f7f7f5; --card:#fff; --text:#1c1c1a; --muted:#6b6b66; --border:#e2e2dd; --accent:#2b5fd9; --code:#f0f0ec; }
-  @media (prefers-color-scheme: dark) {
-    :root { --bg:#161615; --card:#1f1f1d; --text:#ececE8; --muted:#9a9a93; --border:#33332f; --accent:#6c93f0; --code:#292926; }
+  /* Indigo dye on undyed cloth; the dashed "running stitch" is the one decorative idea (dhaga = thread). */
+  :root {
+    --cloth:#f5f6fa; --card:#ffffff; --ink:#161a2e; --muted:#5d6380; --line:#d9dcea;
+    --indigo:#27348b; --indigo-soft:#e8ebf8; --ok:#17734a; --ok-soft:#e3f4ec;
+    --review:#8f5200; --review-soft:#fdf0d9; --fail:#a3211b; --fail-soft:#fbe7e5;
   }
-  * { box-sizing: border-box; }
-  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.5 system-ui,sans-serif; }
-  main { max-width:820px; margin:0 auto; padding:24px 16px 64px; }
-  h1 { font-size:22px; margin:0 0 16px; }
-  h2 { font-size:13px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin:0 0 10px; }
-  .card { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:16px; margin-bottom:16px; }
-  label { display:block; font-weight:600; margin:12px 0 6px; }
-  label:first-child { margin-top:0; }
-  input[type=file], textarea, select { width:100%; padding:9px; border:1px solid var(--border); border-radius:8px; background:var(--bg); color:var(--text); font:inherit; }
-  textarea { min-height:110px; resize:vertical; }
-  button { margin-top:14px; padding:10px 18px; border:0; border-radius:8px; background:var(--accent); color:#fff; font:inherit; font-weight:600; cursor:pointer; }
-  button:disabled { opacity:.5; cursor:wait; }
-  button.ghost { background:var(--code); color:var(--text); margin:0; padding:4px 10px; font-size:13px; }
-  pre { background:var(--code); padding:12px; border-radius:8px; overflow:auto; margin:0; white-space:pre-wrap; word-break:break-word; }
-  table { width:100%; border-collapse:collapse; font-size:14px; }
-  th, td { text-align:left; padding:8px 6px; border-bottom:1px solid var(--border); }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --cloth:#10121c; --card:#191c2b; --ink:#eceef8; --muted:#a0a6c2; --line:#30354d;
+      --indigo:#9aa6ff; --indigo-soft:#232842; --ok:#6fd6a4; --ok-soft:#16302a;
+      --review:#f0b65a; --review-soft:#33270f; --fail:#ff9a92; --fail-soft:#3a1a18;
+    }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--cloth); color:var(--ink); font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  main { max-width:620px; margin:0 auto; padding:20px 16px 56px; }
+  header { display:flex; justify-content:space-between; align-items:baseline; gap:12px; }
+  h1 { font-size:24px; line-height:1.2; margin:0; padding-bottom:10px; letter-spacing:-.01em;
+       border-bottom:2px dashed var(--indigo); }
+  h2 { font-size:18px; margin:26px 0 12px; }
+  h3 { font-size:14px; font-weight:600; color:var(--muted); margin:0 0 4px; }
+  p { margin:0 0 10px; }
+  .muted { color:var(--muted); font-size:14px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; }
+  .linkbtn { background:none; border:0; padding:0; color:var(--muted); font:inherit; font-size:14px; text-decoration:underline; cursor:pointer; }
+
+  .modes { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-bottom:14px; }
+  .modes label { display:flex; align-items:center; justify-content:center; text-align:center; padding:10px 6px; font-size:15px; line-height:1.25; border:1px solid var(--line); border-radius:10px; cursor:pointer; font-weight:600; }
+  .modes label { position:relative; }
+  .modes input { position:absolute; inset:0; width:100%; height:100%; margin:0; opacity:0; cursor:pointer; }
+  .modes input:checked + span { color:var(--indigo); }
+  .modes label:has(input:checked) { border-color:var(--indigo); background:var(--indigo-soft); }
+  .modes label:has(input:focus-visible) { outline:2px solid var(--indigo); outline-offset:2px; }
+
+  textarea, input[type=file], select { width:100%; padding:12px; border:1px solid var(--line); border-radius:10px; background:var(--cloth); color:var(--ink); font:inherit; }
+  textarea { min-height:112px; resize:vertical; }
+  textarea:focus-visible, input[type=file]:focus-visible, select:focus-visible, button:focus-visible { outline:2px solid var(--indigo); outline-offset:2px; }
+  .examples { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
+  .examples button { border:1px solid var(--line); background:none; color:var(--ink); border-radius:999px; padding:5px 11px; font:inherit; font-size:13px; cursor:pointer; text-align:left; }
+  .primary { width:100%; margin-top:16px; padding:13px; border:0; border-radius:10px; background:var(--indigo); color:#fff; font:inherit; font-weight:700; cursor:pointer; }
+  @media (prefers-color-scheme: dark) { .primary { color:#10121c; } }
+  .primary:disabled { opacity:.6; cursor:progress; }
+  select { margin:4px 0 12px; }
+  select:disabled { opacity:.55; }
+  .hidden { display:none !important; }
+
+  .notice { border-radius:12px; padding:14px 16px; margin-top:18px; }
+  .notice.fail { background:var(--fail-soft); color:var(--fail); border:1px solid var(--fail); }
+  .notice button { margin-top:8px; padding:8px 14px; border:1px solid currentColor; border-radius:8px; background:none; color:inherit; font:inherit; font-weight:600; cursor:pointer; }
+  .inline-error { color:var(--fail); font-size:14px; margin-top:10px; min-height:1.2em; }
+
+  .result { margin-top:18px; border-top:2px dashed var(--line); border-radius:0 0 12px 12px; }
+  .badge { display:inline-block; padding:4px 12px; border-radius:999px; font-weight:700; font-size:14px; }
+  .badge.classified { background:var(--ok-soft); color:var(--ok); }
+  .badge.needs_review { background:var(--review-soft); color:var(--review); }
+  .badge.chosen { background:var(--indigo-soft); color:var(--indigo); }
+  .reason { font-size:22px; font-weight:700; line-height:1.25; margin:12px 0 2px; }
+  .heard { background:var(--cloth); border-radius:10px; padding:12px; margin:0 0 4px; white-space:pre-wrap; word-break:break-word; }
+  dl { display:grid; grid-template-columns:auto 1fr; gap:6px 14px; margin:14px 0 0; }
+  dt { color:var(--muted); font-size:14px; } dd { margin:0; }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; }
+  .chips span { background:var(--indigo-soft); border-radius:6px; padding:2px 8px; font-size:14px; }
+  .meter { height:6px; border-radius:3px; background:var(--line); overflow:hidden; margin-top:6px; max-width:180px; }
+  .meter i { display:block; height:100%; background:var(--indigo); }
+
+  details { margin-top:16px; }
+  summary { cursor:pointer; color:var(--muted); font-size:14px; }
+  .tablewrap { overflow-x:auto; margin-top:10px; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { text-align:left; padding:6px; border-bottom:1px solid var(--line); white-space:nowrap; }
   th { color:var(--muted); font-weight:600; }
   td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; }
-  tfoot td { font-weight:700; border-bottom:0; }
-  .row { display:flex; justify-content:space-between; align-items:center; }
-  .err { color:#d33; }
-  .hidden { display:none; }
-  .tablewrap { overflow-x:auto; }
 </style>
 </head>
 <body>
 <main>
-  <h1>Voice Note Parser</h1>
+  <header>
+    <h1>Dhaga &amp; Co. Returns</h1>
+    <button class="linkbtn" id="signout" type="button">Sign out</button>
+  </header>
 
-  <form id="form" class="card">
-    <label for="file">Voice note</label>
-    <input id="file" type="file" accept="audio/*,.m4a,.mp3,.wav,.ogg,.opus,.flac,.aac,.webm" required>
+  <h2>Tell us why you're returning this item</h2>
 
-    <label for="lang">Language</label>
-    <select id="lang">
-      <option value="unknown">Auto-detect</option>
-      <option value="en-IN">English (India)</option>
-      <option value="hi-IN">Hindi</option>
-      <option value="kn-IN">Kannada</option>
-      <option value="ta-IN">Tamil</option>
-      <option value="te-IN">Telugu</option>
-      <option value="ml-IN">Malayalam</option>
-      <option value="mr-IN">Marathi</option>
-      <option value="bn-IN">Bengali</option>
-      <option value="gu-IN">Gujarati</option>
-      <option value="pa-IN">Punjabi</option>
-    </select>
+  <form id="form" class="card" novalidate>
+    <div class="modes" role="radiogroup" aria-label="How do you want to tell us?">
+      <label><input type="radio" name="mode" value="text" checked><span>Type it</span></label>
+      <label><input type="radio" name="mode" value="voice"><span>Voice note</span></label>
+      <label><input type="radio" name="mode" value="list"><span>Pick from list</span></label>
+    </div>
 
-    <label for="prompt">Prompt</label>
-    <textarea id="prompt" required>Extract: a one-line summary, action items (with owner and due date if mentioned), people and companies mentioned, and any amounts of money.</textarea>
+    <div id="text-pane">
+      <label class="muted" for="text">In your own words. English, Hindi or Hinglish all work.</label>
+      <textarea id="text" maxlength="2000" placeholder="Jaise: medium mangwaya tha, bahut loose hai"></textarea>
+      <div class="examples" aria-label="Examples">
+        <button type="button">Maine medium size order kiya tha lekin bahut loose hai.</button>
+        <button type="button">Colour photo jaisa nahi hai, actual mein bahut dark hai.</button>
+        <button type="button">Size loose hai and stitching bhi open ho rahi hai.</button>
+        <button type="button">I don't like it</button>
+      </div>
+    </div>
 
-    <button id="go" type="submit">Parse</button>
-    <span id="status" class="err"></span>
+    <div id="voice-pane" class="hidden">
+      <label class="muted" for="file">Record or choose a voice note. We detect the language automatically.</label>
+      <input id="file" type="file" accept="audio/*,.m4a,.mp3,.wav,.ogg,.opus,.flac,.aac,.webm">
+    </div>
+
+    <div id="list-pane" class="hidden">
+      <label class="muted" for="cat">What is the return about?</label>
+      <select id="cat"><option value="">Choose a category</option></select>
+      <label class="muted" for="sub">What exactly?</label>
+      <select id="sub" disabled><option value="">Choose a category first</option></select>
+    </div>
+
+    <button id="go" class="primary" type="submit">Analyse return reason</button>
+    <div id="error" class="inline-error" role="alert"></div>
   </form>
 
-  <section id="out" class="hidden">
-    <div class="card">
-      <div class="row"><h2>Parsed result</h2><button class="ghost" id="copy" type="button">Copy JSON</button></div>
-      <pre id="result"></pre>
+  <div id="pending" class="notice fail hidden" role="alert">
+    <strong>We couldn't analyse this right now.</strong>
+    <div id="pending-msg">Your return reason has been saved for retry.</div>
+    <button id="retry" type="button">Try again</button>
+  </div>
+
+  <section id="result" class="card result hidden" aria-live="polite">
+    <span id="badge" class="badge"></span>
+    <div id="reason" class="reason"></div>
+    <div id="category" class="muted"></div>
+    <p id="review-note" class="hidden" style="margin-top:10px">We couldn't tell the reason from this. Someone from our team will review it. Nothing has been guessed.</p>
+
+    <dl>
+      <dt id="secondary-dt">Also mentioned</dt><dd id="secondary"></dd>
+      <dt id="details-dt">Details</dt><dd><div id="details" class="chips"></div></dd>
+      <dt id="confidence-dt">Confidence</dt><dd id="confidence-dd"><span id="confidence"></span><div class="meter"><i id="meter"></i></div></dd>
+    </dl>
+
+    <div id="heard-block">
+      <h3 style="margin-top:16px" id="heard-title">What you told us</h3>
+      <div id="heard" class="heard"></div>
     </div>
-    <div class="card">
-      <h2>Transcript <span id="detected" style="text-transform:none;letter-spacing:0"></span></h2>
-      <pre id="transcript"></pre>
-    </div>
-    <div class="card">
-      <h2>API cost</h2>
+    <p style="margin:12px 0 0"><button class="linkbtn" id="change" type="button">Not right? Pick the reason yourself</button></p>
+
+    <details>
+      <summary>For the Dhaga team: routing and cost</summary>
+      <dl>
+        <dt>Goes to</dt><dd id="owner"></dd>
+        <dt>Decided by</dt><dd id="route"></dd>
+        <dt id="hint-dt">Model's low-confidence guess</dt><dd id="hint"></dd>
+        <dt>Why</dt><dd id="explanation"></dd>
+        <dt>Version</dt><dd id="meta" class="muted"></dd>
+      </dl>
       <div class="tablewrap">
         <table>
-          <thead><tr><th>Step</th><th>Model</th><th>Usage</th><th>Rate</th><th class="num">Time</th><th class="num">₹</th><th class="num">$</th></tr></thead>
+          <thead><tr><th>Step</th><th>Model</th><th>Usage</th><th class="num">Time</th><th class="num">₹</th></tr></thead>
           <tbody id="costs"></tbody>
-          <tfoot><tr><td colspan="5">Total</td><td class="num" id="tinr"></td><td class="num" id="tusd"></td></tr></tfoot>
+          <tfoot><tr><td colspan="4">Total</td><td class="num" id="total"></td></tr></tfoot>
         </table>
       </div>
-      <p style="color:var(--muted);font-size:13px;margin:10px 0 0">Estimated from Sarvam's published rates (usage × rate); Sarvam doesn't return cost in responses. Check your dashboard for billed amounts.</p>
-    </div>
+      <p class="muted" style="margin-top:8px">Cost is estimated from Sarvam's published rates.</p>
+    </details>
   </section>
 </main>
 
 <script>
 const $ = id => document.getElementById(id);
-let lastJson = "";
+const PENDING_KEY = "dhaga_pending_return";
+const ROUTES = { first_pass: "Fast first pass", evaluator: "Second read (evaluator)", guard: "Safety check in code, no model call",
+                 list: "Chosen from the list by the customer, no model call" };
+let pendingFile = null;  // a voice note cannot go in localStorage; kept in memory for retry
 
-$("form").addEventListener("submit", async e => {
-  e.preventDefault();
-  $("go").disabled = true; $("go").textContent = "Parsing…"; $("status").textContent = "";
-  const fd = new FormData();
-  fd.append("file", $("file").files[0]);
-  fd.append("prompt", $("prompt").value);
-  fd.append("language_code", $("lang").value);
+let menu = [];           // first-level categories with their reasons, loaded from the server
+let lastDetected = null; // what the model said last, so "pick it yourself" can start from it
+
+const mode = () => document.querySelector("input[name=mode]:checked").value;
+const BUTTON = () => mode() === "list" ? "Confirm return reason" : "Analyse return reason";
+
+function showMode() {
+  ["text", "voice", "list"].forEach(m => $(m + "-pane").classList.toggle("hidden", mode() !== m));
+  $("go").textContent = BUTTON();
+  $("error").textContent = "";
+}
+
+function option(value, label) { const o = document.createElement("option"); o.value = value; o.textContent = label; return o; }
+
+function fillReasons(selected) {
+  const cat = menu.find(c => c.code === $("cat").value), sub = $("sub");
+  sub.textContent = "";
+  sub.disabled = !cat;
+  sub.appendChild(option("", cat ? "Choose a reason" : "Choose a category first"));
+  if (cat) cat.reasons.forEach(r => sub.appendChild(option(r.code, r.label)));
+  sub.value = selected || "";
+}
+
+async function loadMenu() {
   try {
-    const r = await fetch("/api/parse", { method: "POST", body: fd });
-    if (r.status === 401) return location.reload();  // session expired -> login page
-    const d = await r.json();
-    if (!r.ok) throw new Error(d.detail || r.statusText);
+    const r = await fetch("/api/returns/taxonomy");
+    if (r.status === 401) return location.reload();
+    menu = (await r.json()).categories;
+    menu.forEach(c => $("cat").appendChild(option(c.code, c.label)));
+  } catch (e) {   // the list is a convenience; typing and voice still work without it
+    document.querySelector("input[value=list]").disabled = true;
+  }
+}
+$("cat").addEventListener("change", () => { fillReasons(""); $("error").textContent = ""; });
+$("sub").addEventListener("change", () => { $("error").textContent = ""; });
+
+function pickFromList(categoryCode, reasonCode) {
+  document.querySelector("input[value=list]").checked = true;
+  showMode();
+  $("cat").value = categoryCode || "";
+  fillReasons(reasonCode);
+  $("form").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function confirmFromList() {
+  $("error").textContent = "";
+  const cat = menu.find(c => c.code === $("cat").value);
+  const reason = cat && cat.reasons.find(r => r.code === $("sub").value);
+  if (!cat) { $("error").textContent = "Choose a category first."; return; }
+  if (!reason) { $("error").textContent = "Choose a reason under " + cat.label + "."; return; }
+  clearPending();
+  // Chosen by the customer: no model call, no cost.
+  render({
+    chosen: true,
+    input: { mode: "list", text: "", detected_language: null },
+    result: { needs_review: cat.needs_review, reason_label: reason.label, reason_code: reason.code,
+              primary_category: cat.code, primary_category_label: cat.label, owner: cat.owner,
+              details: [], confidence: null, route: "list", explanation: "Selected from the list by the customer." },
+    costs: { steps: [], total_inr: 0 },
+    meta: {},
+    corrected_from: lastDetected,
+  });
+}
+document.querySelectorAll("input[name=mode]").forEach(r => r.addEventListener("change", showMode));
+document.querySelectorAll(".examples button").forEach(b =>
+  b.addEventListener("click", () => { $("text").value = b.textContent; $("text").focus(); }));
+
+function savePending(text) {
+  try { text ? localStorage.setItem(PENDING_KEY, text) : localStorage.removeItem(PENDING_KEY); } catch (e) { /* private mode */ }
+}
+function loadPending() {
+  try { return localStorage.getItem(PENDING_KEY) || ""; } catch (e) { return ""; }
+}
+
+function showPending(text, file) {
+  pendingFile = file || null;
+  if (text) { savePending(text); $("text").value = text; }
+  $("pending-msg").textContent = (file && !text
+    ? "Your voice note is still here. Keep this page open and try again."
+    : "Your return reason has been saved for retry.");
+  $("pending").classList.remove("hidden");
+  $("result").classList.add("hidden");
+}
+function clearPending() {
+  pendingFile = null; savePending("");
+  $("pending").classList.add("hidden");
+}
+
+async function analyse(text, file) {
+  $("go").disabled = true; $("go").textContent = "Analysing…"; $("error").textContent = "";
+  const fd = new FormData();
+  if (file) fd.append("file", file); else fd.append("text", text);
+  try {
+    let r;
+    try {
+      r = await fetch("/api/returns/analyse", { method: "POST", body: fd });
+    } catch (networkError) {             // offline or connection dropped: nothing is lost
+      return showPending(text, file);
+    }
+    if (r.status === 401) return location.reload();   // session expired -> login page
+    let d = {};
+    try { d = await r.json(); } catch (e) { /* non-JSON error page */ }
+    if (r.status === 503 || d.status === "pending" || r.status >= 500) {
+      // If speech-to-text worked but analysis failed, keep the transcript so the audio need not be resent.
+      const transcript = d.input && d.input.text;
+      return showPending(transcript || text, transcript ? null : file);
+    }
+    if (!r.ok) { $("error").textContent = d.detail || "Something went wrong. Please try again."; return; }
+    clearPending();
     render(d);
-  } catch (err) {
-    $("status").textContent = " " + err.message;
   } finally {
-    $("go").disabled = false; $("go").textContent = "Parse";
+    $("go").disabled = false; $("go").textContent = BUTTON();
+  }
+}
+
+$("form").addEventListener("submit", e => {
+  e.preventDefault();
+  if (mode() === "list") return confirmFromList();
+  if (mode() === "voice") {
+    const file = $("file").files[0];
+    if (!file) { $("error").textContent = "Choose or record a voice note first."; return; }
+    analyse("", file);
+  } else {
+    const text = $("text").value.trim();
+    if (!text) { $("error").textContent = "Tell us the reason first."; return; }
+    analyse(text, null);
   }
 });
 
-function render(d) {
-  $("out").classList.remove("hidden");
-  lastJson = d.result ? JSON.stringify(d.result, null, 2) : d.raw_result;
-  $("result").textContent = lastJson + (d.result ? "" : "\n\n(model output was not valid JSON)");
-  $("transcript").textContent = d.transcript;
-  $("detected").textContent = d.detected_language ? "· " + d.detected_language : "";
-  $("costs").innerHTML = "";
-  for (const s of d.costs.steps) {
-    const tr = document.createElement("tr");
-    [s.step, s.model, s.usage, s.rate, s.latency_s + "s", s.cost_inr.toFixed(4), s.cost_usd.toFixed(5)]
-      .forEach((v, i) => { const td = document.createElement("td"); td.textContent = v; if (i >= 4) td.className = "num"; tr.appendChild(td); });
-    $("costs").appendChild(tr);
-  }
-  $("tinr").textContent = "₹" + d.costs.total_inr.toFixed(4);
-  $("tusd").textContent = "$" + d.costs.total_usd.toFixed(5);
+$("retry").addEventListener("click", () => {
+  if (pendingFile) return analyse("", pendingFile);
+  const text = loadPending() || $("text").value.trim();
+  if (text) { document.querySelector("input[value=text]").checked = true; showMode(); analyse(text, null); }
+});
+
+$("signout").addEventListener("click", async () => {
+  try { await fetch("/logout", { method: "POST" }); } catch (e) { /* ignore */ }
+  location.reload();
+});
+
+function setRow(dtId, ddId, value) {   // hide a row when there is nothing to show
+  const empty = value === null || value === undefined || value === "";
+  $(dtId).classList.toggle("hidden", empty);
+  $(ddId).classList.toggle("hidden", empty);
+  if (!empty) $(ddId).textContent = value;
 }
 
-$("copy").addEventListener("click", () => navigator.clipboard.writeText(lastJson));
+function render(d) {
+  const res = d.result, review = res.needs_review, chosen = !!d.chosen;
+  if (!chosen) lastDetected = { category: res.primary_category, reason: res.reason_code, label: res.reason_label, review: review };
+  $("badge").textContent = review ? "Needs Review" : chosen ? "Selected by you" : "Classified";
+  $("badge").className = "badge " + (review ? "needs_review" : chosen ? "chosen" : "classified");
+  $("reason").textContent = res.reason_label;
+  $("category").textContent = res.primary_category_label;
+  $("review-note").classList.toggle("hidden", !review);
+
+  setRow("secondary-dt", "secondary", res.secondary_reason_label);
+  const chips = $("details"); chips.textContent = "";
+  (res.details || []).forEach(t => { const s = document.createElement("span"); s.textContent = t; chips.appendChild(s); });
+  $("details-dt").classList.toggle("hidden", !chips.children.length);
+  chips.parentElement.classList.toggle("hidden", !chips.children.length);
+
+  const pct = Math.round((res.confidence || 0) * 100);
+  $("confidence").textContent = pct + "%";
+  $("meter").style.width = pct + "%";
+  // "90% sure it is unclear" reads oddly to a customer; the figure stays in the team panel via the reason shown.
+  $("confidence-dt").classList.toggle("hidden", review || chosen);
+  $("confidence-dd").classList.toggle("hidden", review || chosen);
+  $("heard-block").classList.toggle("hidden", chosen);
+  $("change").classList.toggle("hidden", chosen);
+
+  const lang = d.input.detected_language ? " (" + d.input.detected_language + ")" : "";
+  $("heard-title").textContent = d.input.mode === "voice" ? "What we heard" + lang : "What you told us";
+  $("heard").textContent = d.input.text;
+
+  $("owner").textContent = res.owner;
+  $("route").textContent = ROUTES[res.route] || res.route;
+  setRow("hint-dt", "hint", res.review_hint);
+  const was = d.corrected_from;
+  $("explanation").textContent = (res.explanation || "") +
+    (chosen && was && was.reason !== res.reason_code ? " The model had said: " + was.label + "." : "");
+  const m = d.meta || {};
+  $("meta").textContent = chosen ? "No model was used" :
+    "Reason list " + (m.taxonomy_version || "?") + ", prompt " + (m.prompt_hash || "?") +
+    ", accept at " + Math.round((m.confidence_threshold || 0) * 100) + "% or above";
+
+  const body = $("costs"); body.textContent = "";
+  (d.costs.steps || []).forEach(s => {
+    const tr = document.createElement("tr");
+    [s.step, s.model, s.usage, s.latency_s + "s", s.cost_inr.toFixed(4)].forEach((v, i) => {
+      const td = document.createElement("td"); td.textContent = v; if (i >= 3) td.className = "num"; tr.appendChild(td);
+    });
+    body.appendChild(tr);
+  });
+  $("total").textContent = "₹" + d.costs.total_inr.toFixed(4);
+  $("result").classList.remove("hidden");
+  $("result").scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+$("change").addEventListener("click", () => {
+  // Start from what the model detected, unless it could not tell.
+  const d = lastDetected;
+  pickFromList(d && !d.review ? d.category : "", d && !d.review ? d.reason : "");
+});
+loadMenu();
+
+// A reason saved by an earlier failed attempt is offered again on the next visit.
+const saved = loadPending();
+if (saved) showPending(saved, null);
 </script>
 </body>
 </html>

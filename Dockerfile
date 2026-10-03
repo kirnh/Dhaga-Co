@@ -13,7 +13,7 @@ WORKDIR /home/user/app
 COPY --chown=user pyproject.toml uv.lock .python-version ./
 RUN uv sync --frozen --no-dev --no-install-project
 
-COPY --chown=user main.py ./
+COPY --chown=user *.py ./
 COPY --chown=user static ./static
 
 EXPOSE 7860

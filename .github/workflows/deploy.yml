@@ -56,7 +56,7 @@ jobs:
           APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
         run: |
           SSH="ssh -i $HOME/.ssh/deploy_key -o ConnectTimeout=15"
-          scp -i ~/.ssh/deploy_key -r main.py static pyproject.toml uv.lock .python-version Dockerfile .dockerignore \
+          scp -i ~/.ssh/deploy_key -r *.py static pyproject.toml uv.lock .python-version Dockerfile .dockerignore \
             "$EC2_USER@$EC2_HOST:/home/ubuntu/app/"
           # Write the key to a root-only env file on the server; it never enters the image or the repo.
           printf 'SARVAM_API_KEY=%s\nAPP_PASSWORD=%s\n' "$SARVAM_API_KEY" "$APP_PASSWORD" | $SSH "$EC2_USER@$EC2_HOST" \
