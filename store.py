@@ -50,7 +50,8 @@ CREATE INDEX IF NOT EXISTS returns_status ON returns (status, resolved_at);
 """
 
 # Columns added after the first version. Applied to an older file on open.
-LATER_COLUMNS = {"sku": "TEXT", "vendor": "TEXT", "source": "TEXT NOT NULL DEFAULT 'live'"}
+LATER_COLUMNS = {"sku": "TEXT", "vendor": "TEXT", "source": "TEXT NOT NULL DEFAULT 'live'",
+                 "order_id": "TEXT", "audio_file": "TEXT", "audio_type": "TEXT"}
 
 
 @contextmanager
@@ -68,10 +69,16 @@ def _db():
                 if col not in have:
                     conn.execute(f"ALTER TABLE returns ADD COLUMN {col} {kind}")
             conn.execute("CREATE INDEX IF NOT EXISTS returns_sku ON returns (sku, created_at)")
+            conn.execute("CREATE INDEX IF NOT EXISTS returns_order ON returns (order_id, sku)")
             yield conn
             conn.commit()
         finally:
             conn.close()
+
+
+def audio_dir() -> str:
+    """Voice notes are kept next to the database (so on the same mounted volume in production)."""
+    return os.path.join(os.path.dirname(DB_PATH) or ".", "audio")
 
 
 def _now() -> str:
@@ -79,42 +86,62 @@ def _now() -> str:
 
 
 def save_result(source: dict, result: dict, costs: dict, meta: dict, sku: str | None = None,
-                vendor: str | None = None, origin: str = "live", created_at: str | None = None) -> int:
+                vendor: str | None = None, origin: str = "live", created_at: str | None = None,
+                order_id: str | None = None, replace_id: int | None = None) -> int | None:
     """Store a finished analysis (status classified or needs_review). Returns the row id.
 
     sku and vendor say which product the return is about (the weekly digest groups by them).
-    origin='demo' marks synthetic rows so they are never mixed into real numbers."""
+    origin='demo' marks synthetic rows so they are never mixed into real numbers.
+    replace_id: the customer is changing an earlier return. That row is rewritten in place (so nothing is
+    counted twice), its cost is added up, and None comes back if it was already settled by the team."""
     with _db() as db:
+        if replace_id is not None:
+            cur = db.execute(
+                """UPDATE returns SET status=?, input_mode=?, text=?, language=?, reason_code=?, category=?, owner=?,
+                          secondary_code=?, details=?, confidence=?, explanation=?, review_hint=?, route=?,
+                          cost_inr = cost_inr + ?, taxonomy_version=?, prompt_hash=?, failed_step=NULL,
+                          audio_file=NULL, audio_type=NULL, order_id=COALESCE(?, order_id),
+                          sku=COALESCE(?, sku), vendor=COALESCE(?, vendor)
+                   WHERE id = ? AND resolved_at IS NULL""",
+                (result["status"], source["mode"], source["text"], source.get("detected_language"),
+                 result["reason_code"], result["primary_category"], result["owner"], result.get("secondary_reason_code"),
+                 json.dumps(result.get("details") or [], ensure_ascii=False), result.get("confidence"),
+                 result.get("explanation"), result.get("review_hint"), result.get("route"),
+                 costs.get("total_inr", 0), meta.get("taxonomy_version"), meta.get("prompt_hash"),
+                 order_id, sku, vendor, replace_id),
+            )
+            return replace_id if cur.rowcount else None
         cur = db.execute(
             """INSERT INTO returns (created_at, status, input_mode, text, language, reason_code, category, owner,
                                     secondary_code, details, confidence, explanation, review_hint, route,
-                                    cost_inr, taxonomy_version, prompt_hash, sku, vendor, source)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                                    cost_inr, taxonomy_version, prompt_hash, sku, vendor, source, order_id)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (created_at or _now(), result["status"], source["mode"], source["text"], source.get("detected_language"),
              result["reason_code"], result["primary_category"], result["owner"], result.get("secondary_reason_code"),
              json.dumps(result.get("details") or [], ensure_ascii=False), result.get("confidence"),
              result.get("explanation"), result.get("review_hint"), result.get("route"),
              costs.get("total_inr", 0), meta.get("taxonomy_version"), meta.get("prompt_hash"),
-             sku, vendor, origin),
+             sku, vendor, origin, order_id),
         )
         return cur.lastrowid
 
 
 def save_pending(source: dict, failed_step: str, costs: dict, sku: str | None = None,
-                 vendor: str | None = None) -> int:
+                 vendor: str | None = None, order_id: str | None = None) -> int:
     """The model could not be reached. Keep the text (or transcript) so the return is not lost."""
     with _db() as db:
         cur = db.execute(
-            """INSERT INTO returns (created_at, status, input_mode, text, language, cost_inr, failed_step, sku, vendor)
-               VALUES (?,?,?,?,?,?,?,?,?)""",
+            """INSERT INTO returns (created_at, status, input_mode, text, language, cost_inr, failed_step, sku, vendor, order_id)
+               VALUES (?,?,?,?,?,?,?,?,?,?)""",
             (_now(), "pending", source["mode"], source["text"], source.get("detected_language"),
-             costs.get("total_inr", 0), failed_step, sku, vendor),
+             costs.get("total_inr", 0), failed_step, sku, vendor, order_id),
         )
         return cur.lastrowid
 
 
 def save_choice(reason_code: str, owner: str, category: str, status: str, sku: str | None = None,
-                vendor: str | None = None, return_id: int | None = None, text: str = "") -> int:
+                vendor: str | None = None, return_id: int | None = None, text: str = "",
+                order_id: str | None = None) -> int:
     """The customer picked the reason themselves (tiles, or 'not right' on a confirm screen).
 
     With return_id, that earlier row (the model's answer, a Needs Review item or a pending one) is
@@ -132,12 +159,27 @@ def save_choice(reason_code: str, owner: str, category: str, status: str, sku: s
                 return return_id
         cur = db.execute(
             """INSERT INTO returns (created_at, status, input_mode, text, reason_code, category, owner, route,
-                                    explanation, sku, vendor, source)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                                    explanation, sku, vendor, source, order_id)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (_now(), status, "list", text, reason_code, category, owner, "customer",
-             "Chosen by the customer.", sku, vendor, "live"),
+             "Chosen by the customer.", sku, vendor, "live", order_id),
         )
         return cur.lastrowid
+
+
+def set_audio(return_id: int, filename: str, content_type: str) -> None:
+    with _db() as db:
+        db.execute("UPDATE returns SET audio_file = ?, audio_type = ? WHERE id = ?", (filename, content_type, return_id))
+
+
+def latest_by_item() -> dict:
+    """The newest live return for each (order id, sku), so the orders page can show what was requested."""
+    with _db() as db:
+        rows = db.execute(
+            """SELECT * FROM returns WHERE order_id IS NOT NULL AND source = 'live'
+               AND id IN (SELECT MAX(id) FROM returns WHERE order_id IS NOT NULL AND source = 'live' GROUP BY order_id, sku)"""
+        ).fetchall()
+    return {(r["order_id"], r["sku"]): _row(r) for r in rows}
 
 
 def _row(r: sqlite3.Row) -> dict:
