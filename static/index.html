@@ -9,74 +9,97 @@
   :root {
     --cloth:#f5f6fa; --card:#ffffff; --ink:#161a2e; --muted:#5d6380; --line:#d9dcea;
     --indigo:#27348b; --indigo-soft:#e8ebf8; --ok:#17734a; --ok-soft:#e3f4ec;
-    --review:#8f5200; --review-soft:#fdf0d9; --fail:#a3211b; --fail-soft:#fbe7e5;
+    --review:#8f5200; --review-soft:#fdf0d9; --fail:#a3211b; --fail-soft:#fbe7e5; --rec:#c62d24;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --cloth:#10121c; --card:#191c2b; --ink:#eceef8; --muted:#a0a6c2; --line:#30354d;
       --indigo:#9aa6ff; --indigo-soft:#232842; --ok:#6fd6a4; --ok-soft:#16302a;
-      --review:#f0b65a; --review-soft:#33270f; --fail:#ff9a92; --fail-soft:#3a1a18;
+      --review:#f0b65a; --review-soft:#33270f; --fail:#ff9a92; --fail-soft:#3a1a18; --rec:#ff6b61;
     }
   }
   * { box-sizing:border-box; }
   body { margin:0; background:var(--cloth); color:var(--ink); font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
-  main { max-width:620px; margin:0 auto; padding:20px 16px 56px; }
-  header { display:flex; justify-content:space-between; align-items:baseline; gap:12px; }
-  h1 { font-size:24px; line-height:1.2; margin:0; padding-bottom:10px; letter-spacing:-.01em;
-       border-bottom:2px dashed var(--indigo); }
-  h2 { font-size:18px; margin:26px 0 12px; }
-  h3 { font-size:14px; font-weight:600; color:var(--muted); margin:0 0 4px; }
+  main { max-width:560px; margin:0 auto; padding:20px 16px 56px; }
+  header { display:flex; justify-content:space-between; align-items:baseline; gap:12px; border-bottom:2px dashed var(--indigo); padding-bottom:10px; }
+  h1 { font-size:22px; line-height:1.2; margin:0; letter-spacing:-.01em; }
+  h2 { font-size:22px; line-height:1.25; margin:22px 0 6px; letter-spacing:-.01em; }
+  h2:focus { outline:none; }
   p { margin:0 0 10px; }
   .muted { color:var(--muted); font-size:14px; }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; }
-  .linkbtn { background:none; border:0; padding:0; color:var(--muted); font:inherit; font-size:14px; text-decoration:underline; cursor:pointer; }
+  .center { text-align:center; }
+  .hidden { display:none !important; }
+  button { font:inherit; color:inherit; }
+  button:focus-visible, textarea:focus-visible { outline:2px solid var(--indigo); outline-offset:2px; }
+  .linkbtn { background:none; border:0; padding:6px 0; color:var(--muted); font-size:14px; text-decoration:underline; cursor:pointer; }
+  .back { display:inline-block; margin-top:14px; }
 
-  .modes { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-bottom:14px; }
-  .modes label { display:flex; align-items:center; justify-content:center; text-align:center; padding:10px 6px; font-size:15px; line-height:1.25; border:1px solid var(--line); border-radius:10px; cursor:pointer; font-weight:600; }
-  .modes label { position:relative; }
-  .modes input { position:absolute; inset:0; width:100%; height:100%; margin:0; opacity:0; cursor:pointer; }
-  .modes input:checked + span { color:var(--indigo); }
-  .modes label:has(input:checked) { border-color:var(--indigo); background:var(--indigo-soft); }
-  .modes label:has(input:focus-visible) { outline:2px solid var(--indigo); outline-offset:2px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; }
 
-  textarea, input[type=file], select { width:100%; padding:12px; border:1px solid var(--line); border-radius:10px; background:var(--cloth); color:var(--ink); font:inherit; }
-  textarea { min-height:112px; resize:vertical; }
-  textarea:focus-visible, input[type=file]:focus-visible, select:focus-visible, button:focus-visible { outline:2px solid var(--indigo); outline-offset:2px; }
-  .examples { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
-  .examples button { border:1px solid var(--line); background:none; color:var(--ink); border-radius:999px; padding:5px 11px; font:inherit; font-size:13px; cursor:pointer; text-align:left; }
-  .primary { width:100%; margin-top:16px; padding:13px; border:0; border-radius:10px; background:var(--indigo); color:#fff; font:inherit; font-weight:700; cursor:pointer; }
+  /* orders */
+  .order { margin-top:16px; }
+  .order-head { padding:12px 16px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap; }
+  .order-head b { font-size:15px; }
+  .item { display:flex; align-items:center; gap:12px; width:100%; padding:12px 16px; background:none; border:0; border-top:1px solid var(--line);
+          text-align:left; cursor:pointer; min-height:72px; }
+  .order-head + .item { border-top:0; }
+  .item:disabled { cursor:default; opacity:.75; }
+  .item:not(:disabled):active { background:var(--indigo-soft); }
+  .swatch { flex:none; width:48px; height:48px; border-radius:10px; display:grid; place-items:center; font-size:24px; }
+  .item-text { flex:1; min-width:0; }
+  .item-name { font-weight:600; line-height:1.3; }
+  .item-cta { flex:none; font-size:14px; font-weight:700; color:var(--indigo); }
+  .item-cta.done { color:var(--ok); }
+
+  .picked { display:flex; align-items:center; gap:12px; padding:10px 12px; margin-top:14px; }
+
+  /* the voice button */
+  .mic-wrap { display:flex; flex-direction:column; align-items:center; margin:22px 0 6px; }
+  .mic { width:112px; height:112px; border-radius:50%; border:0; background:var(--indigo); color:#fff; font-size:44px; cursor:pointer;
+         display:grid; place-items:center; box-shadow:0 6px 18px rgba(39,52,139,.28); }
+  @media (prefers-color-scheme: dark) { .mic { color:#10121c; } }
+  .mic.rec { background:var(--rec); color:#fff; animation:pulse 1.2s ease-in-out infinite; }
+  .mic:disabled { opacity:.55; cursor:progress; animation:none; }
+  @keyframes pulse { 0%,100% { box-shadow:0 0 0 0 rgba(198,45,36,.45); } 50% { box-shadow:0 0 0 18px rgba(198,45,36,0); } }
+  @media (prefers-reduced-motion: reduce) { .mic.rec { animation:none; } }
+  .mic-label { margin-top:14px; font-weight:600; min-height:1.5em; }
+
+  textarea { width:100%; min-height:112px; padding:12px; border:1px solid var(--line); border-radius:10px; background:var(--card); color:var(--ink); font:inherit; resize:vertical; }
+  .primary { width:100%; margin-top:14px; padding:14px; border:0; border-radius:10px; background:var(--indigo); color:#fff; font-weight:700; cursor:pointer; min-height:48px; }
   @media (prefers-color-scheme: dark) { .primary { color:#10121c; } }
   .primary:disabled { opacity:.6; cursor:progress; }
-  select { margin:4px 0 12px; }
-  select:disabled { opacity:.55; }
-  .hidden { display:none !important; }
-
-  .notice { border-radius:12px; padding:14px 16px; margin-top:18px; }
-  .notice.fail { background:var(--fail-soft); color:var(--fail); border:1px solid var(--fail); }
-  .notice button { margin-top:8px; padding:8px 14px; border:1px solid currentColor; border-radius:8px; background:none; color:inherit; font:inherit; font-weight:600; cursor:pointer; }
+  .secondary { width:100%; margin-top:10px; padding:14px; border:1px solid var(--indigo); border-radius:10px; background:none; color:var(--indigo); font-weight:700; cursor:pointer; min-height:48px; }
   .inline-error { color:var(--fail); font-size:14px; margin-top:10px; min-height:1.2em; }
 
-  .result { margin-top:18px; border-top:2px dashed var(--line); border-radius:0 0 12px 12px; }
-  .badge { display:inline-block; padding:4px 12px; border-radius:999px; font-weight:700; font-size:14px; }
-  .badge.classified { background:var(--ok-soft); color:var(--ok); }
-  .badge.needs_review { background:var(--review-soft); color:var(--review); }
-  .badge.chosen { background:var(--indigo-soft); color:var(--indigo); }
-  .reason { font-size:22px; font-weight:700; line-height:1.25; margin:12px 0 2px; }
-  .heard { background:var(--cloth); border-radius:10px; padding:12px; margin:0 0 4px; white-space:pre-wrap; word-break:break-word; }
-  dl { display:grid; grid-template-columns:auto 1fr; gap:6px 14px; margin:14px 0 0; }
-  dt { color:var(--muted); font-size:14px; } dd { margin:0; }
-  .chips { display:flex; flex-wrap:wrap; gap:6px; }
-  .chips span { background:var(--indigo-soft); border-radius:6px; padding:2px 8px; font-size:14px; }
-  .meter { height:6px; border-radius:3px; background:var(--line); overflow:hidden; margin-top:6px; max-width:180px; }
-  .meter i { display:block; height:100%; background:var(--indigo); }
+  /* tiles and rows */
+  .tiles { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:14px; }
+  .tile { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px 12px; min-height:92px; cursor:pointer;
+          display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; text-align:center; font-weight:600; line-height:1.25; }
+  .tile .ico { font-size:26px; }
+  .tile.suggest { border-color:var(--indigo); background:var(--indigo-soft); }
+  .tile:active, .row:active { background:var(--indigo-soft); }
+  .rows { display:flex; flex-direction:column; gap:8px; margin-top:14px; }
+  .row { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px; min-height:52px; text-align:left; cursor:pointer; font-weight:600; }
+  .row.suggest { border-color:var(--indigo); background:var(--indigo-soft); }
+  .tag { font-size:12px; font-weight:700; color:var(--indigo); margin-left:6px; }
 
-  details { margin-top:16px; }
-  summary { cursor:pointer; color:var(--muted); font-size:14px; }
-  .tablewrap { overflow-x:auto; margin-top:10px; }
-  table { width:100%; border-collapse:collapse; font-size:13px; }
-  th, td { text-align:left; padding:6px; border-bottom:1px solid var(--line); white-space:nowrap; }
-  th { color:var(--muted); font-weight:600; }
-  td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; }
+  /* confirm and done */
+  .heard { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px; margin:10px 0 0; white-space:pre-wrap; word-break:break-word; }
+  .understood { font-size:24px; font-weight:700; line-height:1.25; margin:6px 0 2px; }
+  .check { width:64px; height:64px; border-radius:50%; background:var(--ok-soft); color:var(--ok); display:grid; place-items:center; font-size:32px; margin:26px auto 4px; }
+  .check.review { background:var(--review-soft); color:var(--review); }
+  .btn-pair { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:16px; }
+  .btn-pair .primary, .btn-pair .secondary { margin-top:0; }
+
+  /* the one small banner */
+  .banner { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:14px; padding:10px 14px; border-radius:10px;
+            background:var(--fail-soft); color:var(--fail); border:1px solid var(--fail); font-size:14px; }
+  .banner button { flex:none; padding:6px 12px; border:1px solid currentColor; border-radius:8px; background:none; font-weight:700; cursor:pointer; }
+
+  details.staff { margin-top:22px; }
+  details.staff summary { cursor:pointer; color:var(--muted); font-size:14px; }
+  dl { display:grid; grid-template-columns:auto 1fr; gap:4px 14px; margin:10px 0 0; font-size:14px; }
+  dt { color:var(--muted); } dd { margin:0; word-break:break-word; }
 </style>
 </head>
 <body>
@@ -86,303 +109,405 @@
     <button class="linkbtn" id="signout" type="button">Sign out</button>
   </header>
 
-  <h2>Tell us why you're returning this item</h2>
-
-  <form id="form" class="card" novalidate>
-    <div class="modes" role="radiogroup" aria-label="How do you want to tell us?">
-      <label><input type="radio" name="mode" value="text" checked><span>Type it</span></label>
-      <label><input type="radio" name="mode" value="voice"><span>Voice note</span></label>
-      <label><input type="radio" name="mode" value="list"><span>Pick from list</span></label>
-    </div>
-
-    <div id="text-pane">
-      <label class="muted" for="text">In your own words. English, Hindi or Hinglish all work.</label>
-      <textarea id="text" maxlength="2000" placeholder="Jaise: medium mangwaya tha, bahut loose hai"></textarea>
-      <div class="examples" aria-label="Examples">
-        <button type="button">Maine medium size order kiya tha lekin bahut loose hai.</button>
-        <button type="button">Colour photo jaisa nahi hai, actual mein bahut dark hai.</button>
-        <button type="button">Size loose hai and stitching bhi open ho rahi hai.</button>
-        <button type="button">I don't like it</button>
-      </div>
-    </div>
-
-    <div id="voice-pane" class="hidden">
-      <label class="muted" for="file">Record or choose a voice note. We detect the language automatically.</label>
-      <input id="file" type="file" accept="audio/*,.m4a,.mp3,.wav,.ogg,.opus,.flac,.aac,.webm">
-    </div>
-
-    <div id="list-pane" class="hidden">
-      <label class="muted" for="cat">What is the return about?</label>
-      <select id="cat"><option value="">Choose a category</option></select>
-      <label class="muted" for="sub">What exactly?</label>
-      <select id="sub" disabled><option value="">Choose a category first</option></select>
-    </div>
-
-    <button id="go" class="primary" type="submit">Analyse return reason</button>
-    <div id="error" class="inline-error" role="alert"></div>
-  </form>
-
-  <div id="pending" class="notice fail hidden" role="alert">
-    <strong>We couldn't analyse this right now.</strong>
-    <div id="pending-msg">Your return reason has been saved for retry.</div>
+  <div id="banner" class="banner hidden" role="alert">
+    <span id="banner-msg"></span>
     <button id="retry" type="button">Try again</button>
   </div>
 
-  <section id="result" class="card result hidden" aria-live="polite">
-    <span id="badge" class="badge"></span>
-    <div id="reason" class="reason"></div>
-    <div id="category" class="muted"></div>
-    <p id="review-note" class="hidden" style="margin-top:10px">We couldn't tell the reason from this. Someone from our team will review it. Nothing has been guessed.</p>
+  <!-- 1. Orders: the item chosen here is the only "which" question the customer is ever asked -->
+  <section id="s-orders" class="hidden">
+    <h2 id="orders-title" tabindex="-1">Which item are you returning?</h2>
+    <p class="muted">Tap the item. Then just tell us what's wrong.</p>
+    <div id="orders"></div>
+  </section>
 
-    <dl>
-      <dt id="secondary-dt">Also mentioned</dt><dd id="secondary"></dd>
-      <dt id="details-dt">Details</dt><dd><div id="details" class="chips"></div></dd>
-      <dt id="confidence-dt">Confidence</dt><dd id="confidence-dd"><span id="confidence"></span><div class="meter"><i id="meter"></i></div></dd>
-    </dl>
+  <!-- 2. Voice first, typing second -->
+  <section id="s-speak" class="hidden">
+    <button class="linkbtn back" type="button" data-back="orders">‹ Back to orders</button>
+    <div class="card picked" id="speak-item"></div>
+    <h2 id="speak-title" tabindex="-1">Tell us what's wrong</h2>
 
-    <div id="heard-block">
-      <h3 style="margin-top:16px" id="heard-title">What you told us</h3>
-      <div id="heard" class="heard"></div>
-    </div>
-    <p style="margin:12px 0 0"><button class="linkbtn" id="change" type="button">Not right? Pick the reason yourself</button></p>
-
-    <details>
-      <summary>For the Dhaga team: routing and cost</summary>
-      <dl>
-        <dt>Goes to</dt><dd id="owner"></dd>
-        <dt>Decided by</dt><dd id="route"></dd>
-        <dt id="hint-dt">Model's low-confidence guess</dt><dd id="hint"></dd>
-        <dt>Why</dt><dd id="explanation"></dd>
-        <dt>Version</dt><dd id="meta" class="muted"></dd>
-      </dl>
-      <div class="tablewrap">
-        <table>
-          <thead><tr><th>Step</th><th>Model</th><th>Usage</th><th class="num">Time</th><th class="num">₹</th></tr></thead>
-          <tbody id="costs"></tbody>
-          <tfoot><tr><td colspan="4">Total</td><td class="num" id="total"></td></tr></tfoot>
-        </table>
+    <div id="voice-pane">
+      <div class="mic-wrap">
+        <button id="mic" class="mic" type="button" aria-label="Start recording">🎙</button>
+        <div id="mic-label" class="mic-label" aria-live="polite">Tap and speak in Hindi, English or Hinglish</div>
       </div>
-      <p class="muted" style="margin-top:8px">Cost is estimated from Sarvam's published rates.</p>
+      <p class="center"><button class="linkbtn" id="to-text" type="button">Prefer typing?</button></p>
+    </div>
+
+    <div id="text-pane" class="hidden">
+      <label class="muted" for="text">In your own words. English, Hindi or Hinglish all work.</label>
+      <textarea id="text" maxlength="2000" placeholder="Jaise: medium mangwaya tha, bahut loose hai"></textarea>
+      <button id="go" class="primary" type="button">Done</button>
+      <p class="center"><button class="linkbtn" id="to-voice" type="button">Prefer speaking?</button></p>
+    </div>
+
+    <div id="error" class="inline-error" role="alert"></div>
+    <p class="center"><button class="linkbtn" id="to-list" type="button">Choose from a list instead</button></p>
+  </section>
+
+  <!-- 3. Only when we are not sure -->
+  <section id="s-confirm" class="hidden">
+    <h2 id="confirm-title" tabindex="-1">Did we get that right?</h2>
+    <p class="muted">You told us</p>
+    <div class="heard" id="heard"></div>
+    <p class="muted" style="margin-top:16px">We understood</p>
+    <div class="understood" id="understood"></div>
+    <div class="btn-pair">
+      <button class="primary" id="yes" type="button">Yes</button>
+      <button class="secondary" id="no" type="button">No</button>
+    </div>
+  </section>
+
+  <!-- 4. Category, 5. sub-category: only when we could not tell, or the customer said No -->
+  <section id="s-category" class="hidden">
+    <button class="linkbtn back" type="button" data-back="speak" id="cat-back">‹ Back</button>
+    <h2 id="category-title" tabindex="-1">What best describes the problem?</h2>
+    <p class="muted" id="category-note"></p>
+    <div class="tiles" id="tiles"></div>
+    <div id="error-choose" class="inline-error" role="alert"></div>
+  </section>
+
+  <section id="s-reason" class="hidden">
+    <button class="linkbtn back" type="button" data-back="category">‹ Back</button>
+    <h2 id="reason-title" tabindex="-1">Which one is it?</h2>
+    <div class="rows" id="rows"></div>
+    <div id="error-reason" class="inline-error" role="alert"></div>
+  </section>
+
+  <section id="s-done" class="hidden center">
+    <div class="check" id="done-check" aria-hidden="true">✓</div>
+    <h2 id="done-title" tabindex="-1">Return requested</h2>
+    <p id="done-item" class="muted"></p>
+    <p id="done-reason"></p>
+    <p id="done-review" class="hidden">We couldn't tell the reason from this, so our team will look at it. Nothing has been guessed.</p>
+    <button class="primary" id="again" type="button">Back to orders</button>
+    <details class="staff hidden" id="staff" style="text-align:left">
+      <summary>Team details</summary>
+      <dl id="staff-dl"></dl>
     </details>
   </section>
 </main>
 
 <script>
 const $ = id => document.getElementById(id);
-const PENDING_KEY = "dhaga_pending_return";
-const ROUTES = { first_pass: "Fast first pass", evaluator: "Second read (evaluator)", guard: "Safety check in code, no model call",
-                 list: "Chosen from the list by the customer, no model call" };
-let pendingFile = null;  // a voice note cannot go in localStorage; kept in memory for retry
+const PENDING_KEY = "dhaga_pending_return", DONE_KEY = "dhaga_returned_items";
+const STAFF = new URLSearchParams(location.search).has("staff");   // ?staff shows the team details on the last screen
+const ICONS = { FIT: "📏", QUALITY: "🧵", NOT_AS_DESCRIBED: "🖼", FULFILMENT: "📦", DELIVERY: "🚚", CUSTOMER: "💭", UNCLEAR: "❔" };
+const MAX_RECORD_S = 60;
 
-let menu = [];           // first-level categories with their reasons, loaded from the server
-let lastDetected = null; // what the model said last, so "pick it yourself" can start from it
+let customer = {}, orders = [], menu = [];
+let item = null, order = null;          // what is being returned
+let saved = null;                       // the saved row of the last analysis (so a pick from the tiles corrects it)
+let last = null;                        // the last analysis, for confirm / suggestions
+let pendingFile = null;                 // a voice note cannot go in localStorage; kept in memory for retry
+let busy = false;
 
-const mode = () => document.querySelector("input[name=mode]:checked").value;
-const BUTTON = () => mode() === "list" ? "Confirm return reason" : "Analyse return reason";
+/* ---------- small helpers ---------- */
+const store = {
+  get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch (e) { return d; } },
+  set(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* private mode */ } },
+};
+const returned = () => store.get(DONE_KEY, {});
+const rupees = n => "₹" + n.toLocaleString("en-IN");
+const dateText = iso => new Date(iso + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
 
-function showMode() {
-  ["text", "voice", "list"].forEach(m => $(m + "-pane").classList.toggle("hidden", mode() !== m));
-  $("go").textContent = BUTTON();
-  $("error").textContent = "";
+const SCREENS = ["orders", "speak", "confirm", "category", "reason", "done"];
+function show(name, titleId) {
+  SCREENS.forEach(s => $("s-" + s).classList.toggle("hidden", s !== name));
+  const t = $(titleId || name + "-title");
+  if (t) { t.focus({ preventScroll: true }); }
+  window.scrollTo({ top: 0 });
+}
+function banner(msg) { $("banner").classList.toggle("hidden", !msg); if (msg) $("banner-msg").textContent = msg; }
+
+function swatch(it) {
+  const s = el("div", "swatch", it.emoji); s.style.background = it.tint + "33"; s.setAttribute("aria-hidden", "true"); return s;
+}
+function itemLine(it) {
+  const box = el("div", "item-text");
+  box.appendChild(el("div", "item-name", it.name));
+  box.appendChild(el("div", "muted", (it.size === "Free" ? "Free size" : "Size " + it.size) + " · " + rupees(it.price)));
+  return box;
 }
 
-function option(value, label) { const o = document.createElement("option"); o.value = value; o.textContent = label; return o; }
-
-function fillReasons(selected) {
-  const cat = menu.find(c => c.code === $("cat").value), sub = $("sub");
-  sub.textContent = "";
-  sub.disabled = !cat;
-  sub.appendChild(option("", cat ? "Choose a reason" : "Choose a category first"));
-  if (cat) cat.reasons.forEach(r => sub.appendChild(option(r.code, r.label)));
-  sub.value = selected || "";
+/* ---------- 1. orders ---------- */
+function renderOrders() {
+  const box = $("orders"); box.textContent = "";
+  const did = returned();
+  orders.forEach(o => {
+    const card = el("div", "card order");
+    const head = el("div", "order-head");
+    head.appendChild(el("b", null, "Order " + o.id));
+    head.appendChild(el("span", "muted", "Delivered " + dateText(o.delivered) + " · " + o.payment));
+    card.appendChild(head);
+    o.items.forEach(it => {
+      const b = el("button", "item"); b.type = "button";
+      b.appendChild(swatch(it)); b.appendChild(itemLine(it));
+      const done = did[it.sku];
+      b.appendChild(el("span", "item-cta" + (done ? " done" : ""), done ? "Requested ✓" : "Return ›"));
+      b.disabled = !!done;
+      b.setAttribute("aria-label", (done ? "Return requested for " : "Return ") + it.name);
+      b.addEventListener("click", () => startReturn(o, it));
+      card.appendChild(b);
+    });
+    box.appendChild(card);
+  });
+  $("orders-title").textContent = customer.name ? "Hi " + customer.name + ", which item are you returning?" : "Which item are you returning?";
 }
 
+async function loadOrders() {
+  try {
+    const r = await fetch("/api/orders");
+    if (r.status === 401) return location.reload();
+    const d = await r.json(); customer = d.customer; orders = d.orders;
+    renderOrders();
+  } catch (e) { banner("We couldn't load your orders. Check your connection."); $("retry").onclick = () => { banner(""); loadOrders(); }; }
+  show("orders");
+  loadMenu();
+}
 async function loadMenu() {
   try {
     const r = await fetch("/api/returns/taxonomy");
-    if (r.status === 401) return location.reload();
-    menu = (await r.json()).categories;
-    menu.forEach(c => $("cat").appendChild(option(c.code, c.label)));
-  } catch (e) {   // the list is a convenience; typing and voice still work without it
-    document.querySelector("input[value=list]").disabled = true;
-  }
-}
-$("cat").addEventListener("change", () => { fillReasons(""); $("error").textContent = ""; });
-$("sub").addEventListener("change", () => { $("error").textContent = ""; });
-
-function pickFromList(categoryCode, reasonCode) {
-  document.querySelector("input[value=list]").checked = true;
-  showMode();
-  $("cat").value = categoryCode || "";
-  fillReasons(reasonCode);
-  $("form").scrollIntoView({ behavior: "smooth", block: "start" });
+    if (r.ok) menu = (await r.json()).categories;
+  } catch (e) { /* the tiles are a fallback; voice and typing work without them */ }
 }
 
-function confirmFromList() {
+/* ---------- 2. speak or type ---------- */
+function startReturn(o, it) {
+  order = o; item = it; saved = null; last = null; pendingFile = null;
+  const line = $("speak-item"); line.textContent = "";
+  line.appendChild(swatch(it)); line.appendChild(itemLine(it));
+  $("text").value = ""; $("error").textContent = ""; $("error-choose").textContent = "";
+  banner(""); setMicIdle(); useVoice();
+  show("speak");
+}
+function useText(msg) {
+  $("voice-pane").classList.add("hidden"); $("text-pane").classList.remove("hidden");
+  $("error").textContent = msg || ""; $("text").focus();
+}
+function useVoice() {
+  $("text-pane").classList.add("hidden"); $("voice-pane").classList.remove("hidden"); $("error").textContent = "";
+}
+$("to-text").addEventListener("click", () => useText());
+$("to-voice").addEventListener("click", () => canRecord() ? useVoice() : useText("Recording isn't available on this device. Please type."));
+$("to-list").addEventListener("click", () => openCategories("speak", null, "Choose what fits best."));
+
+const canRecord = () => !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder);
+let rec = null, chunks = [], stream = null, tick = null, startedAt = 0;
+
+function setMicIdle(label) {
+  const m = $("mic"); m.classList.remove("rec"); m.disabled = false; m.textContent = "🎙"; m.setAttribute("aria-label", "Start recording");
+  $("mic-label").textContent = label || "Tap and speak in Hindi, English or Hinglish";
+}
+async function toggleRecording() {
+  if (busy) return;
+  if (rec && rec.state === "recording") return rec.stop();
+  if (!canRecord()) return useText("Recording isn't available on this device. Please type.");
   $("error").textContent = "";
-  const cat = menu.find(c => c.code === $("cat").value);
-  const reason = cat && cat.reasons.find(r => r.code === $("sub").value);
-  if (!cat) { $("error").textContent = "Choose a category first."; return; }
-  if (!reason) { $("error").textContent = "Choose a reason under " + cat.label + "."; return; }
-  clearPending();
-  // Chosen by the customer: no model call, no cost.
-  render({
-    chosen: true,
-    input: { mode: "list", text: "", detected_language: null },
-    result: { needs_review: cat.needs_review, reason_label: reason.label, reason_code: reason.code,
-              primary_category: cat.code, primary_category_label: cat.label, owner: cat.owner,
-              details: [], confidence: null, route: "list", explanation: "Selected from the list by the customer." },
-    costs: { steps: [], total_inr: 0 },
-    meta: {},
-    corrected_from: lastDetected,
-  });
+  try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+  catch (e) { return useText("We couldn't use the microphone. Please type instead."); }
+  const mime = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;codecs=opus"].find(t => MediaRecorder.isTypeSupported(t)) || "";
+  chunks = [];
+  rec = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+  rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+  rec.onstop = () => {
+    clearInterval(tick); stream.getTracks().forEach(t => t.stop());
+    const type = (rec.mimeType || mime || "audio/webm").split(";")[0];
+    const blob = new Blob(chunks, { type }), secs = (Date.now() - startedAt) / 1000;
+    if (secs < 1 || blob.size < 1000) { setMicIdle("That was too short. Tap and try again."); return; }
+    const ext = type.includes("mp4") ? "m4a" : type.includes("ogg") ? "ogg" : "webm";
+    analyse("", new File([blob], "voice." + ext, { type }));   // stopping the recording is the submit: no extra button
+  };
+  startedAt = Date.now(); rec.start();
+  const m = $("mic"); m.classList.add("rec"); m.textContent = "■"; m.setAttribute("aria-label", "Stop recording");
+  tick = setInterval(() => {
+    const s = Math.floor((Date.now() - startedAt) / 1000);
+    $("mic-label").textContent = "Listening… " + s + "s. Tap to finish.";
+    if (s >= MAX_RECORD_S) rec.stop();
+  }, 250);
+  $("mic-label").textContent = "Listening… tap to finish.";
 }
-document.querySelectorAll("input[name=mode]").forEach(r => r.addEventListener("change", showMode));
-document.querySelectorAll(".examples button").forEach(b =>
-  b.addEventListener("click", () => { $("text").value = b.textContent; $("text").focus(); }));
+$("mic").addEventListener("click", toggleRecording);
 
-function savePending(text) {
-  try { text ? localStorage.setItem(PENDING_KEY, text) : localStorage.removeItem(PENDING_KEY); } catch (e) { /* private mode */ }
-}
-function loadPending() {
-  try { return localStorage.getItem(PENDING_KEY) || ""; } catch (e) { return ""; }
-}
+$("go").addEventListener("click", () => {
+  const text = $("text").value.trim();
+  if (!text) { $("error").textContent = "Tell us what's wrong first."; return; }
+  analyse(text, null);
+});
 
-function showPending(text, file) {
-  pendingFile = file || null;
-  if (text) { savePending(text); $("text").value = text; }
-  $("pending-msg").textContent = (file && !text
-    ? "Your voice note is still here. Keep this page open and try again."
-    : "Your return reason has been saved for retry.");
-  $("pending").classList.remove("hidden");
-  $("result").classList.add("hidden");
-}
-function clearPending() {
-  pendingFile = null; savePending("");
-  $("pending").classList.add("hidden");
+/* ---------- analysing ---------- */
+function working(on, text) {
+  busy = on;
+  $("mic").disabled = on; $("go").disabled = on; $("go").textContent = on ? "One moment…" : "Done";
+  if (on) { $("mic").classList.remove("rec"); $("mic").textContent = "…"; $("mic-label").textContent = text || "Understanding what you said…"; }
+  else setMicIdle();
 }
 
 async function analyse(text, file) {
-  $("go").disabled = true; $("go").textContent = "Analysing…"; $("error").textContent = "";
+  working(true, file ? "Listening to your note…" : "One moment…");
+  $("error").textContent = "";
   const fd = new FormData();
   if (file) fd.append("file", file); else fd.append("text", text);
+  fd.append("sku", item.sku); fd.append("vendor", item.vendor);
   try {
     let r;
-    try {
-      r = await fetch("/api/returns/analyse", { method: "POST", body: fd });
-    } catch (networkError) {             // offline or connection dropped: nothing is lost
-      return showPending(text, file);
-    }
-    if (r.status === 401) return location.reload();   // session expired -> login page
+    try { r = await fetch("/api/returns/analyse", { method: "POST", body: fd }); }
+    catch (networkError) { return keepForRetry(text, file); }       // offline or dropped: nothing is lost
+    if (r.status === 401) return location.reload();                  // session expired -> login page
     let d = {};
     try { d = await r.json(); } catch (e) { /* non-JSON error page */ }
     if (r.status === 503 || d.status === "pending" || r.status >= 500) {
-      // If speech-to-text worked but analysis failed, keep the transcript so the audio need not be resent.
-      const transcript = d.input && d.input.text;
-      return showPending(transcript || text, transcript ? null : file);
+      const transcript = d.input && d.input.text;                    // speech worked but analysis failed: keep the words
+      return keepForRetry(transcript || text, transcript ? null : file);
     }
     if (!r.ok) { $("error").textContent = d.detail || "Something went wrong. Please try again."; return; }
     clearPending();
-    render(d);
-  } finally {
-    $("go").disabled = false; $("go").textContent = BUTTON();
-  }
+    outcome(d);
+  } finally { working(false); }
 }
 
-$("form").addEventListener("submit", e => {
-  e.preventDefault();
-  if (mode() === "list") return confirmFromList();
-  if (mode() === "voice") {
-    const file = $("file").files[0];
-    if (!file) { $("error").textContent = "Choose or record a voice note first."; return; }
-    analyse("", file);
-  } else {
-    const text = $("text").value.trim();
-    if (!text) { $("error").textContent = "Tell us the reason first."; return; }
-    analyse(text, null);
+/* the single small banner: saved, will retry */
+function keepForRetry(text, file) {
+  pendingFile = file || null;
+  if (text) store.set(PENDING_KEY, { text, sku: item.sku, orderId: order.id });
+  banner(file && !text ? "Couldn't reach us. Your voice note is still here. Keep this page open." : "Couldn't reach us. Your reason is saved.");
+  $("retry").onclick = retryPending;
+  if (text) $("text").value = text;
+  show("speak");
+}
+function clearPending() { pendingFile = null; store.set(PENDING_KEY, null); banner(""); }
+function retryPending() {
+  const p = store.get(PENDING_KEY, null);
+  if (!item && p) {   // after a reload: find the item again
+    orders.forEach(o => o.items.forEach(it => { if (it.sku === p.sku) { item = it; order = o; } }));
   }
-});
-
-$("retry").addEventListener("click", () => {
+  if (!item) return banner("");
   if (pendingFile) return analyse("", pendingFile);
-  const text = loadPending() || $("text").value.trim();
-  if (text) { document.querySelector("input[value=text]").checked = true; showMode(); analyse(text, null); }
-});
+  const text = (p && p.text) || $("text").value.trim();
+  if (text) analyse(text, null);
+}
 
+/* ---------- what happens with the answer ---------- */
+function outcome(d) {
+  const res = d.result;
+  last = d; saved = d.saved_id;
+  if (res.needs_review) {                       // we could not tell: the customer picks, with our best guess first
+    const hint = res.review_hint && menu.length ? findReason(res.review_hint) : null;
+    return openCategories("speak", hint, "We couldn't quite tell. Please choose what fits best.");
+  }
+  if (res.needs_confirm) {                      // our reading and the customer's words disagree: ask, do not assume
+    $("heard").textContent = d.input.text;
+    $("understood").textContent = res.reason_label + (res.secondary_reason_label ? " and " + res.secondary_reason_label.toLowerCase() : "");
+    return show("confirm");
+  }
+  finish(res.reason_label, false);              // confident and consistent: accepted, no question asked
+}
+$("yes").addEventListener("click", () => finish(last.result.reason_label, false));
+$("no").addEventListener("click", () => openCategories("confirm", { category: last.result.primary_category }, "Sorry about that. Please choose what fits best."));
+
+function findReason(code) {
+  for (const c of menu) { const r = c.reasons.find(x => x.code === code); if (r) return { category: c.code, reason: r.code }; }
+  return null;
+}
+
+/* ---------- 4. category, 5. sub-category ---------- */
+let suggest = null;
+function openCategories(from, hint, note) {
+  if (!menu.length) { $("error").textContent = "The list isn't available right now. Please speak or type."; return; }
+  suggest = hint;
+  $("cat-back").classList.toggle("hidden", from === "confirm");
+  $("category-note").textContent = note || "";
+  $("error-choose").textContent = "";
+  const tiles = $("tiles"); tiles.textContent = "";
+  const ordered = menu.slice().sort((a, b) => (b.code === (hint && hint.category)) - (a.code === (hint && hint.category)));
+  ordered.forEach(c => {
+    const t = el("button", "tile" + (hint && c.code === hint.category ? " suggest" : "")); t.type = "button";
+    t.appendChild(el("span", "ico", ICONS[c.code] || "•"));
+    t.appendChild(el("span", null, c.customer_label || c.label));
+    t.addEventListener("click", () => c.needs_review ? choose(c.reasons.find(r => r.code === "UNCLEAR_FREE_TEXT") || c.reasons[0]) : openReasons(c));
+    tiles.appendChild(t);
+  });
+  show("category");
+}
+function openReasons(c) {
+  $("reason-title").textContent = c.customer_label || c.label;
+  $("error-reason").textContent = "";
+  const rows = $("rows"); rows.textContent = "";
+  const first = suggest && suggest.reason;                      // the model's low-confidence guess goes first, marked
+  c.reasons.slice().sort((a, b) => (b.code === first) - (a.code === first)).forEach(r => {
+    const b = el("button", "row" + (r.code === first ? " suggest" : ""), r.label); b.type = "button";
+    if (r.code === first) b.appendChild(el("span", "tag", "Maybe this"));
+    b.addEventListener("click", () => choose(r));
+    rows.appendChild(b);
+  });
+  show("reason");
+}
+async function choose(reason) {
+  const fd = new FormData();
+  fd.append("reason_code", reason.code); fd.append("sku", item.sku); fd.append("vendor", item.vendor);
+  if (saved) fd.append("return_id", saved);
+  if (last && last.input) fd.append("text", last.input.text);
+  const err = $("s-reason").classList.contains("hidden") ? $("error-choose") : $("error-reason");
+  err.textContent = "";
+  try {
+    const r = await fetch("/api/returns/choose", { method: "POST", body: fd });
+    if (r.status === 401) return location.reload();
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { err.textContent = d.detail || "We couldn't save that. Please try again."; return; }
+    finish(d.status === "needs_review" ? null : d.reason_label, d.status === "needs_review", d);
+  } catch (e) { err.textContent = "We couldn't save that. Check your connection and try again."; }
+}
+
+/* ---------- done ---------- */
+function finish(label, review, chosen) {
+  const did = returned(); did[item.sku] = label || "Under review"; store.set(DONE_KEY, did);
+  $("done-check").classList.toggle("review", review); $("done-check").textContent = review ? "…" : "✓";
+  $("done-title").textContent = review ? "Sent to our team" : "Return requested";
+  $("done-item").textContent = item.name + " · Order " + order.id;
+  $("done-reason").textContent = review ? "" : "We've noted: " + label;
+  $("done-reason").classList.toggle("hidden", review);
+  $("done-review").classList.toggle("hidden", !review);
+  staffPanel(chosen);
+  renderOrders();
+  show("done");
+}
+function staffPanel(chosen) {
+  $("staff").classList.toggle("hidden", !STAFF);
+  if (!STAFF) return;
+  const dl = $("staff-dl"); dl.textContent = "";
+  const res = last && last.result;
+  const add = (k, v) => { if (v == null || v === "") return; dl.appendChild(el("dt", null, k)); dl.appendChild(el("dd", null, String(v))); };
+  add("SKU / vendor", item.sku + " / " + item.vendor);
+  if (res) {
+    add("Reason", res.reason_code + (res.secondary_reason_code ? " + " + res.secondary_reason_code : ""));
+    add("Owner", res.owner); add("Route", res.route);
+    add("Confidence", Math.round((res.confidence || 0) * 100) + "%");
+    add("Direction check", res.needs_confirm ? "Mismatch: customer asked to confirm" : "No conflict");
+    add("Cost", "₹" + (last.costs.total_inr || 0).toFixed(4));
+    add("Saved as", last.saved_id);
+  }
+  if (chosen) add("Customer chose", chosen.reason_code);
+}
+
+/* ---------- plumbing ---------- */
+document.querySelectorAll("[data-back]").forEach(b => b.addEventListener("click", () => {
+  const to = b.dataset.back;
+  if (to === "orders") show("orders"); else if (to === "speak") show("speak");
+  else if (to === "category") show("category");
+}));
+$("again").addEventListener("click", () => { item = order = last = saved = null; show("orders"); });
 $("signout").addEventListener("click", async () => {
   try { await fetch("/logout", { method: "POST" }); } catch (e) { /* ignore */ }
   location.reload();
 });
 
-function setRow(dtId, ddId, value) {   // hide a row when there is nothing to show
-  const empty = value === null || value === undefined || value === "";
-  $(dtId).classList.toggle("hidden", empty);
-  $(ddId).classList.toggle("hidden", empty);
-  if (!empty) $(ddId).textContent = value;
-}
-
-function render(d) {
-  const res = d.result, review = res.needs_review, chosen = !!d.chosen;
-  if (!chosen) lastDetected = { category: res.primary_category, reason: res.reason_code, label: res.reason_label, review: review };
-  $("badge").textContent = review ? "Needs Review" : chosen ? "Selected by you" : "Classified";
-  $("badge").className = "badge " + (review ? "needs_review" : chosen ? "chosen" : "classified");
-  $("reason").textContent = res.reason_label;
-  $("category").textContent = res.primary_category_label;
-  $("review-note").classList.toggle("hidden", !review);
-
-  setRow("secondary-dt", "secondary", res.secondary_reason_label);
-  const chips = $("details"); chips.textContent = "";
-  (res.details || []).forEach(t => { const s = document.createElement("span"); s.textContent = t; chips.appendChild(s); });
-  $("details-dt").classList.toggle("hidden", !chips.children.length);
-  chips.parentElement.classList.toggle("hidden", !chips.children.length);
-
-  const pct = Math.round((res.confidence || 0) * 100);
-  $("confidence").textContent = pct + "%";
-  $("meter").style.width = pct + "%";
-  // "90% sure it is unclear" reads oddly to a customer; the figure stays in the team panel via the reason shown.
-  $("confidence-dt").classList.toggle("hidden", review || chosen);
-  $("confidence-dd").classList.toggle("hidden", review || chosen);
-  $("heard-block").classList.toggle("hidden", chosen);
-  $("change").classList.toggle("hidden", chosen);
-
-  const lang = d.input.detected_language ? " (" + d.input.detected_language + ")" : "";
-  $("heard-title").textContent = d.input.mode === "voice" ? "What we heard" + lang : "What you told us";
-  $("heard").textContent = d.input.text;
-
-  $("owner").textContent = res.owner;
-  $("route").textContent = ROUTES[res.route] || res.route;
-  setRow("hint-dt", "hint", res.review_hint);
-  const was = d.corrected_from;
-  $("explanation").textContent = (res.explanation || "") +
-    (chosen && was && was.reason !== res.reason_code ? " The model had said: " + was.label + "." : "");
-  const m = d.meta || {};
-  $("meta").textContent = chosen ? "No model was used" :
-    "Reason list " + (m.taxonomy_version || "?") + ", prompt " + (m.prompt_hash || "?") +
-    ", accept at " + Math.round((m.confidence_threshold || 0) * 100) + "% or above";
-
-  const body = $("costs"); body.textContent = "";
-  (d.costs.steps || []).forEach(s => {
-    const tr = document.createElement("tr");
-    [s.step, s.model, s.usage, s.latency_s + "s", s.cost_inr.toFixed(4)].forEach((v, i) => {
-      const td = document.createElement("td"); td.textContent = v; if (i >= 3) td.className = "num"; tr.appendChild(td);
-    });
-    body.appendChild(tr);
-  });
-  $("total").textContent = "₹" + d.costs.total_inr.toFixed(4);
-  $("result").classList.remove("hidden");
-  $("result").scrollIntoView({ behavior: "smooth", block: "nearest" });
-}
-
-$("change").addEventListener("click", () => {
-  // Start from what the model detected, unless it could not tell.
-  const d = lastDetected;
-  pickFromList(d && !d.review ? d.category : "", d && !d.review ? d.reason : "");
+loadOrders().then(() => {
+  // A reason saved by an earlier failed attempt is offered again on the next visit.
+  const p = store.get(PENDING_KEY, null);
+  if (p && p.text) { banner("Your last return reason is saved. Send it now?"); $("retry").onclick = retryPending; }
 });
-loadMenu();
-
-// A reason saved by an earlier failed attempt is offered again on the next visit.
-const saved = loadPending();
-if (saved) showPending(saved, null);
 </script>
 </body>
 </html>

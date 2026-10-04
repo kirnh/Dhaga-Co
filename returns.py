@@ -104,6 +104,10 @@ class ReturnResult(BaseModel):
     route: Literal["first_pass", "evaluator", "guard"]
     # True/False when two independent readings were compared, None when only one was run.
     readings_agree: bool | None = None
+    # Set by the direction check (code): the customer's words and the reason point opposite ways,
+    # so the screen asks the customer to confirm instead of accepting it automatically.
+    needs_confirm: bool = False
+    confirm_note: str | None = None
 
 
 def output_schema() -> dict:
@@ -217,6 +221,48 @@ _INSTRUCTION = re.compile(
 def looks_like_instruction(text: str) -> bool:
     upper = text.upper()
     return bool(_INSTRUCTION.search(text)) or any(code in upper for code in REASONS if "_" in code)
+
+
+# DIRECTION CHECK (code). The model reported 1.0 confidence on "too tight around my waist" and chose
+# LOOSE_AT_WAIST, the opposite. Confidence cannot catch that, so code compares the direction of the
+# customer's words with the direction of the reason. It only ever adds a confirm step, never changes the reason.
+_DIRECTIONS = {
+    # reason -> (axis, side)
+    "SIZE_TOO_SMALL": ("fit", "tight"), "TIGHT_AT_CHEST": ("fit", "tight"),
+    "SIZE_TOO_LARGE": ("fit", "loose"), "LOOSE_AT_WAIST": ("fit", "loose"),
+    "LENGTH_TOO_SHORT": ("length", "short"), "SLEEVES_TOO_SHORT": ("length", "short"),
+    "LENGTH_TOO_LONG": ("length", "long"), "SLEEVES_TOO_LONG": ("length", "long"),
+}
+_WORDS = {  # Latin words are matched whole; Devanagari words as substrings
+    ("fit", "tight"): (r"tight|small|snug|tang|kasa|chhota|chota|chhoti|choti|chhote", ("टाइट", "तंग", "छोटा", "छोटी", "छोटे")),
+    ("fit", "loose"): (r"loose|large|big|baggy|dheela|dheeli|dhila|dhili|dhilla|bada|badi|bade", ("ढीला", "ढीली", "ढीले", "बड़ा", "बड़ी", "बड़े")),
+    ("length", "short"): (r"short|chhota|chota|chhoti|choti", ("छोटा", "छोटी")),
+    ("length", "long"): (r"long|lamba|lambi|lamb[ae]", ("लंबा", "लंबी", "लम्बा", "लम्बी")),
+}
+
+
+def _says(text: str, key: tuple[str, str]) -> bool:
+    latin, deva = _WORDS[key]
+    return bool(re.search(rf"\b(?:{latin})\b", text.lower())) or any(w in text for w in deva)
+
+
+def direction_conflict(text: str, reason_code: str | None) -> bool:
+    """True when the text speaks only of the opposite side to the reason (tight vs loose, short vs long).
+    Text that mentions both sides is left alone: it is ambiguous, not contradicted."""
+    if reason_code not in _DIRECTIONS:
+        return False
+    axis, side = _DIRECTIONS[reason_code]
+    other = {"tight": "loose", "loose": "tight", "short": "long", "long": "short"}[side]
+    return _says(text, (axis, other)) and not _says(text, (axis, side))
+
+
+def _checked(text: str, result: ReturnResult) -> ReturnResult:
+    for code in (result.reason_code, result.secondary_reason_code):
+        if direction_conflict(text, code):
+            result.needs_confirm = True
+            result.confirm_note = "The words used and the reason found point in opposite directions."
+            break
+    return result
 
 
 def parse_output(raw: str) -> ModelOutput:
@@ -335,7 +381,7 @@ async def classify_return(text: str, llm: LLM, threshold: float | None = None,
     if first is not None and is_unclear(first.reason_code) and agree is not False:
         return _needs_review(first, "first_pass", agree=agree), steps
     if _is_confident(first, threshold) and agree is not False:
-        return _classified(first, "first_pass", agree), steps
+        return _checked(text, _classified(first, "first_pass", agree)), steps
     if not use_evaluator:
         return _needs_review(first, "first_pass", agree=agree), steps
 
@@ -347,7 +393,7 @@ async def classify_return(text: str, llm: LLM, threshold: float | None = None,
         # The first reading exists, so the return is not lost: a human looks at it.
         return _needs_review(first, "evaluator", "The second read was unavailable; sent for review.", agree), steps
     if _is_confident(final, threshold):
-        return _classified(final, "evaluator", agree), steps
+        return _checked(text, _classified(final, "evaluator", agree)), steps
 
     # Still unsure: do not guess.
     return _needs_review(final or first, "evaluator", agree=agree), steps
