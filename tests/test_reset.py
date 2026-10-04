@@ -39,15 +39,23 @@ def test_reset_deletes_the_voice_notes_too(client, sarvam):
     assert client.get(f"/api/returns/{saved}").status_code == 404
 
 
+def test_reset_also_clears_returns_attached_to_no_order(client, sarvam):
+    """Rows from earlier builds have no order id: the orders page never lists them, but the team view does."""
+    orphan = client.post("/api/returns/analyse", data={"text": "medium is too tight"}).json()["saved_id"]
+    legacy = client.post("/api/returns/choose", data={"reason_code": "SLEEVES_TOO_SHORT", "sku": "DH-TOP-0129"}).json()["saved_id"]
+    assert returned_items(client) == []                      # invisible on the customer screen
+    assert client.post("/api/orders/reset").json() == {"cleared": 2}
+    assert store.get(orphan) is None and store.get(legacy) is None
+    assert all(q["items"] == [] for q in client.get("/api/team/board").json()["queues"])
+
+
 def test_reset_leaves_other_rows_alone(client, sarvam):
-    sarvam.chat = [GOOD, GOOD]
-    no_order = client.post("/api/returns/analyse", data={"text": "bahut loose hai"}).json()["saved_id"]
     other = client.post("/api/returns/analyse", data={"text": "bahut loose hai", "sku": "X-1", "order_id": "OTHER-1"}).json()["saved_id"]
     seeded = store.save_result({"mode": "text", "text": "seed"}, main.returns.ReturnResult(
         status="classified", needs_review=False, primary_category="FIT", primary_category_label="Fit and size",
         owner="Neha", reason_code="SIZE_TOO_LARGE", reason_label="Size too large", confidence=0.9,
         route="first_pass").model_dump(), {"total_inr": 0}, {}, "DH-KRT-0412", "Jaipur V12",
-        order_id="DH-24101", origin="demo")
+        order_id=None, origin="demo")
     client.post("/api/orders/reset")
-    for row_id in (no_order, other, seeded):
+    for row_id in (other, seeded):
         assert store.get(row_id) is not None

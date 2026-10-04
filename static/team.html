@@ -55,7 +55,7 @@
 <main>
   <header>
     <h1>Dhaga &amp; Co. Returns · Team view</h1>
-    <span><a href="/">Customer screen</a> &nbsp; <button class="linkbtn" id="refresh" type="button">Refresh</button> &nbsp; <button class="linkbtn" id="signout" type="button">Sign out</button></span>
+    <span><a href="/">Customer screen</a> &nbsp; <button class="linkbtn" id="refresh" type="button">Refresh</button> &nbsp; <button class="linkbtn" id="reset" type="button">Clear demo returns</button> &nbsp; <button class="linkbtn" id="signout" type="button">Sign out</button></span>
   </header>
   <p class="lead">Each return is placed in the queue of the team that owns its reason. The owner comes from a lookup table, not from the model. Returns the system would not guess wait in Needs Review until someone picks the reason. <span class="muted" id="updated"></span></p>
   <div id="banner" class="hidden" role="alert"></div>
@@ -153,6 +153,15 @@ async function load() {
 }
 
 $("refresh").addEventListener("click", load);
+$("reset").addEventListener("click", async () => {
+  if (!confirm("Clear the demo returns? Every return on the demo orders, and any attached to no order, is deleted with its voice note.")) return;
+  try {
+    const r = await fetch("/api/orders/reset", { method: "POST" });
+    if (r.status === 401) return location.reload();
+    if (!r.ok) throw new Error("reset");
+    await load();
+  } catch (e) { $("banner").textContent = "We couldn't clear the returns. Please try again."; $("banner").classList.remove("hidden"); }
+});
 $("signout").addEventListener("click", async () => { try { await fetch("/logout", { method: "POST" }); } catch (e) {} location.reload(); });
 load();
 // Keep the board current during a demo, but never while someone is choosing a reason.
