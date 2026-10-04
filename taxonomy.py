@@ -169,13 +169,26 @@ def prompt_block(reverse: bool = False) -> str:
     return "\n".join(lines)
 
 
+# What the customer sees on the category tiles. The team's own names (the ones in CATEGORIES)
+# stay for the digest and the review queue; "Customer-side, no defect" is not something to say to a customer.
+CUSTOMER_LABELS = {
+    "FIT": "Size or fit",
+    "QUALITY": "Quality problem",
+    "NOT_AS_DESCRIBED": "Not like the photos or listing",
+    "FULFILMENT": "Wrong or missing item",
+    "DELIVERY": "Delivery problem",
+    "CUSTOMER": "I changed my mind",
+    UNCLEAR_CATEGORY: "Something else",
+}
+
+
 def as_menu() -> dict:
     """The two-level list for the screen: 7 first-level categories, reasons under each.
     Served by the API so the page never hardcodes a reason."""
     return {
         "version": TAXONOMY_VERSION,
         "categories": [
-            {"code": cat, "label": cat_label, "owner": owner, "needs_review": cat == UNCLEAR_CATEGORY,
+            {"code": cat, "label": cat_label, "customer_label": CUSTOMER_LABELS[cat], "owner": owner, "needs_review": cat == UNCLEAR_CATEGORY,
              "reasons": [{"code": code, "label": label} for code, label, _hint, _ref in items]}
             for cat, (cat_label, owner, items) in CATEGORIES.items()
         ],

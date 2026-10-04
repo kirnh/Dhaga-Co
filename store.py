@@ -113,6 +113,33 @@ def save_pending(source: dict, failed_step: str, costs: dict, sku: str | None = 
         return cur.lastrowid
 
 
+def save_choice(reason_code: str, owner: str, category: str, status: str, sku: str | None = None,
+                vendor: str | None = None, return_id: int | None = None, text: str = "") -> int:
+    """The customer picked the reason themselves (tiles, or 'not right' on a confirm screen).
+
+    With return_id, that earlier row (the model's answer, a Needs Review item or a pending one) is
+    corrected in place and leaves the team's queue; otherwise a new row is made. route='customer'
+    marks it, so it can be told apart from a model answer. Returns the row id."""
+    with _db() as db:
+        if return_id is not None:
+            cur = db.execute(
+                """UPDATE returns SET status = ?, reason_code = ?, category = ?, owner = ?, secondary_code = NULL,
+                          confidence = NULL, review_hint = NULL, route = 'customer', explanation = 'Chosen by the customer.'
+                   WHERE id = ? AND resolved_at IS NULL""",
+                (status, reason_code, category, owner, return_id),
+            )
+            if cur.rowcount:
+                return return_id
+        cur = db.execute(
+            """INSERT INTO returns (created_at, status, input_mode, text, reason_code, category, owner, route,
+                                    explanation, sku, vendor, source)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (_now(), status, "list", text, reason_code, category, owner, "customer",
+             "Chosen by the customer.", sku, vendor, "live"),
+        )
+        return cur.lastrowid
+
+
 def _row(r: sqlite3.Row) -> dict:
     d = dict(r)
     d["details"] = json.loads(d["details"] or "[]")

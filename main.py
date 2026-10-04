@@ -18,6 +18,7 @@ from mutagen import File as MutagenFile
 load_dotenv()  # before importing returns, which reads its settings from the environment
 
 import digest  # noqa: E402
+import orders  # noqa: E402
 import returns  # noqa: E402
 import store  # noqa: E402
 import taxonomy  # noqa: E402
@@ -274,6 +275,12 @@ def returns_taxonomy():
     return taxonomy.as_menu()
 
 
+@app.get("/api/orders", dependencies=[Depends(require_login)])
+def list_orders():
+    """The customer's delivered orders (three demo orders; there is no orders feed in this MVP)."""
+    return {"customer": orders.CUSTOMER, "orders": orders.ORDERS}
+
+
 PENDING_MESSAGE = "We couldn't analyse this right now. Your return reason has been saved for retry."
 
 
@@ -332,6 +339,28 @@ async def analyse_return(
         "meta": meta,
         "saved_id": saved_id,  # None means the answer is shown but could not be stored
     }
+
+
+@app.post("/api/returns/choose", dependencies=[Depends(require_login)])
+def choose_reason(
+    reason_code: str = Form(...),
+    sku: str | None = Form(None),
+    vendor: str | None = Form(None),
+    return_id: int | None = Form(None),  # the earlier saved row to correct, if there was one
+    text: str = Form(""),
+):
+    """The customer picked the reason from the tiles. No model call. The choice is stored, so the
+    weekly digest counts it, and it replaces the model's answer when return_id is given."""
+    reason = taxonomy.REASONS.get(reason_code)
+    if reason is None:
+        raise HTTPException(422, f"'{reason_code}' is not a reason code from the list")
+    sku, vendor = _product_ref("sku", sku), _product_ref("vendor", vendor)
+    # "Something else" cannot be classified: it goes to the team's queue instead of being guessed.
+    status = "needs_review" if taxonomy.is_unclear(reason_code) else "classified"
+    saved_id = _keep(lambda: store.save_choice(reason.code, reason.owner, reason.category, status, sku, vendor,
+                                                return_id, text.strip()[:returns.MAX_TEXT_CHARS]))
+    return {"status": status, "reason_code": reason.code, "reason_label": reason.label,
+            "category_label": reason.category_label, "owner": reason.owner, "saved_id": saved_id}
 
 
 PRODUCT_REF = re.compile(r"^[\w .,/&()'-]{1,64}$")

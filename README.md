@@ -110,6 +110,20 @@ uv run python eval/seed_demo.py          # 480 SYNTHETIC returns, stored with so
 
 The seeder plants two clusters (fit on one SKU, stitching on another) so there is something to find. Demo rows never mix into `source=live` numbers.
 
+### The customer screen and the demo orders
+
+Customer flow: pick an item from an order, then voice (default), or text, and only when we are not sure a category tile and a reason list. A confident, consistent answer is accepted with no question. Add `?staff` to the URL to see owner, route, confidence and cost on the last screen.
+
+**Direction check (code).** The model once answered "too tight around my waist" with `LOOSE_AT_WAIST` at 1.0 confidence, so confidence cannot catch it. `returns.direction_conflict()` compares tight/loose and short/long words (English, Hinglish, Devanagari) with the direction of the reason. A clear opposite sets `needs_confirm` and the screen asks "Did we get that right?". It never changes the reason. Text that mentions both sides is left alone.
+
+| Order | Item to return | Say or type | Result |
+|---|---|---|---|
+| DH-24101 (COD, Delhivery) | Cotton kurti, mustard | "Maine medium size order kiya tha lekin bahut loose hai." (voice) | Size too large, accepted, no question |
+| DH-24102 (prepaid, Shiprocket) | Floral maxi dress | "Size loose hai and stitching bhi open ho rahi hai." | Size too large + stitching came apart; two owners, one Tiruppur SKU |
+| DH-24103 (prepaid, Ekart) | A-line dress, navy | "The dress is too tight around my waist." | The failure, shown on purpose: model says Loose at waist (1.0), the check asks the customer, "No" leads to the tiles, the corrected reason is stored |
+
+SKU codes, vendor names and order ids are placeholders (`orders.py`); prices and carriers follow the brief.
+
 ### API
 
 All routes except `/health` need the session cookie from `POST /login`.
@@ -117,6 +131,8 @@ All routes except `/health` need the session cookie from `POST /login`.
 | Route | What it does |
 |---|---|
 | `POST /api/returns/analyse` | Form field `text` **or** file `file` (voice), optional `sku`, `vendor`. Returns status, reason, owner, confidence, cost rows and `saved_id`. |
+| `GET /api/orders` | The three demo orders (2-3 items each) the customer picks a return from. No orders feed exists in this MVP. |
+| `POST /api/returns/choose` | Form `reason_code`, optional `sku`, `vendor`, `return_id`, `text`. The customer picked the reason from the tiles: stored (`route=customer`), replaces the model's row when `return_id` is given. "Something else" goes to the Needs Review queue. No model call. |
 | `GET /api/returns/taxonomy` | The two-level reason list, generated from `taxonomy.py` |
 | `GET /api/returns/review?state=open\|resolved` | The Needs Review queue (also holds "pending" returns the model could not reach) |
 | `POST /api/returns/review/{id}/resolve` | Form `reason_code` (must be a specific reason from the list), optional `note`. Settles an item once. |

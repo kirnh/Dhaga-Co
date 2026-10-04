@@ -32,7 +32,15 @@ Branch `feature/needs-review-and-docs` (backend and docs only, **no frontend cha
    (model answers FABRIC_UNLIKE_DESCRIPTION); kids clips labelled "size too large".
 5. One Sarvam call took 61 s. The app times out at 30 s and shows "saved for retry".
 
-## The screen (`static/index.html`)
+## Customer screen, rebuilt (4 Oct 2026; supersedes "The screen" below)
+- `static/index.html` is now: orders page (`orders.py`, 3 demo orders, 2-3 items each) -> tap an item -> big mic (default, stopping the recording submits) or "Prefer typing?" -> accepted silently when confident, "Did we get that right?" when the direction check (`returns.direction_conflict`) flags it, category tiles then reason rows when the model cannot tell or the customer says No.
+- Customer-friendly category names live in `taxonomy.CUSTOMER_LABELS`. `sku` and `vendor` are now sent. The customer's own pick is stored via `POST /api/returns/choose`, so it reaches the digest.
+- Demo script and the three orders: README, "The customer screen and the demo orders". The failure case (known problem 1) is now caught by the check, not fixed in the reason list.
+- The model call is faked in the browser test; **not tried on a real phone, a real microphone or live Sarvam**. Safari records mp4 audio: unchecked with Sarvam.
+- The direction check is word-based, so "not tight" also asks for a confirm (one extra tap, never a wrong answer). Words beyond tight/loose/short/long are not covered.
+- Needs Review and digest screens for the team are still not built.
+
+## The screen (old, before 4 Oct)
 - "Dhaga & Co. Returns": type a reason or send a voice note, then a result card with status,
   reason, second issue, details, confidence, and a collapsed team panel (owner, route, cost).
 - Three ways in: "Type it", "Voice note" (language auto-detected) and "Pick from list".
