@@ -1,6 +1,6 @@
-# Returns classifier: status and hand-off (3 Oct 2026)
+# Returns classifier: status and hand-off (3 Oct 2026, updated)
 
-Branch `feature/sandeep-returns-classifier`. Merging to `main` deploys it and replaces the live screen.
+Branch `feature/needs-review-and-docs` (backend and docs only, **no frontend change**). Merging to `main` deploys it. `.github/workflows/deploy.yml` now mounts a data folder on the server: have a teammate read that change before merging.
 
 ## What is built
 - `taxonomy.py`: the 61 reasons, 7 owner groups, hints and prompt examples. The only place reasons live.
@@ -8,8 +8,12 @@ Branch `feature/sandeep-returns-classifier`. Merging to `main` deploys it and re
   schema validation with one retry, code guard for injected instructions, evaluator for
   invalid or low-confidence output, Needs Review instead of guessing.
 - `main.py`: `POST /api/returns/analyse` (form field `text` OR file field `file`). `/api/parse` unchanged.
-- `eval/`: 84 labelled transcripts + 38 hard cases, `run_eval.py`.
-- `tests/`: 77 tests, Sarvam faked. `uv run pytest`.
+- `eval/`: 84 labelled transcripts + 38 hard cases + **78 held-out cases** (`heldout_cases.csv`, 200 in all), `run_eval.py` (`--only heldout`), `seed_demo.py` (synthetic data for the digest demo).
+- `store.py`: SQLite store (`RETURNS_DB`, default `data/returns.db`). Every analysis is saved, with optional `sku` and `vendor`. Pending (model unreachable) returns are saved too.
+- New API: `GET /api/returns/review`, `POST /api/returns/review/{id}/resolve`, `GET /api/returns/stats`, `GET /api/returns/digest`. `/api/returns/analyse` takes optional `sku`, `vendor` and returns `saved_id`.
+- `digest.py`: weekly per-SKU and per-vendor digest, count threshold plus z-score, owner looked up from the taxonomy. Code only, no model.
+- `README.md` rewritten and `BUILD_NOTE.md` added (the brief's two-page build note).
+- `tests/`: 110 tests, Sarvam faked. `pytest` (uv cannot download behind Avast; plain `python -m pytest` works with the packages installed).
 
 ## Measured on live Sarvam (run 2, 3 Oct, taxonomy version team-61-2026-10-03b)
 - Labelled: 73/84 exact (87%), 78/84 to the right owner (93%), 0 small/large flips.
@@ -46,11 +50,18 @@ Branch `feature/sandeep-returns-classifier`. Merging to `main` deploys it and re
 - The old Voice Note Parser page is replaced; `/api/parse` still exists.
 
 ## Not built yet
-- Needs Review list for the team.
-- README rewrite (it still describes the batch digest and says "not deployed yet").
+- **Frontend for the team:** a Needs Review screen (the API exists) and a digest screen. `static/index.html` is untouched and still the customer form. It does not send `sku` or `vendor`.
+- **Held-out run:** `eval/heldout_cases.csv` has never been run on the model (needs `SARVAM_API_KEY`, about ₹6). Its labels were drafted by Claude: a teammate should review them. The keyword baseline scores 26% on it.
+- `--second-opinion` still unmeasured. The evaluator is still slow (known problems 2, 3, 5 above).
+- Known problem 1 (tight at waist) is documented as the demo's failure case; the fix (new reasons) is the team's decision. Held-out rows h-03 and h-06 test that area.
+- **Two-model rule:** text path uses `sarvam-105b` for both passes. A cheaper first-pass model is not built.
+- The digest compares shares of returns, not rates: units sold per SKU are not available. Thresholds (`DIGEST_MIN_COUNT=5`, `DIGEST_MIN_Z=3`) are untuned; a synthetic demo flagged one cluster by chance.
+- Discovery note is not in the repo (`docs/` is gitignored). The brief wants it in the repo, dated before the first commit: team decision.
+- Team names in the README are still TBD.
 
 ## Run the evaluation
     cp .env.example .env        # add SARVAM_API_KEY and APP_PASSWORD
+    python eval/seed_demo.py                           # synthetic digest demo, no key needed
     uv run python eval/run_eval.py --baseline         # free
     uv run python eval/run_eval.py                    # about ₹10
     uv run python eval/run_eval.py --second-opinion   # about ₹20, not yet run

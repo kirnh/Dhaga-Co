@@ -4,6 +4,8 @@ Reads the "Other" box on returns that nobody reads, and tells Neha every week wh
 
 FDE Academy · Tech Track · Mini Project 1 · Group 8 (five members).
 
+Live: https://dhaga.ctrlaltexist.com (password-protected; `/health` is open).
+
 ## 1. The problem
 
 In Dhaga's words: "Forty-four percent of our returns get dumped into 'Other' with unread customer feedback, meaning we keep reordering and manufacturing items that don't fit right while our repeat purchase rate stays flat."
@@ -25,46 +27,59 @@ Our biggest assumption: fit and sizing is the main thing hiding in "Other". If f
 
 ## 2. What it does
 
-This is a batch report for Neha. It is not a customer-facing bot. Nothing reaches customers.
+A tool for Neha's team. Nothing is sent to customers by a model.
 
-1. Take past return text from the "Other" box.
-2. A cheap model turns each one into JSON: a **list** of reasons (one return can have several), fit direction (too small or too big), body area, and a confidence score.
-3. Code checks the JSON against a schema. Bad JSON gets one retry.
-4. Rows with low confidence go to a stronger model for a second read.
-5. Rows still unsure go to an on-screen "unclear" queue. We do not guess.
-6. Code counts reasons per SKU and vendor each week. Only SKUs over a threshold appear in the digest.
-7. Each finding is routed to the team that can fix it:
+1. **Read one return.** Typed text or a voice note (speech-to-text first). English, Hindi and Hinglish, Roman or Devanagari.
+2. **Classify.** A fast model picks one of **61 reasons** (and a second reason if exactly two problems are stated). The reasons are grouped under 7 owners and live in `taxonomy.py`, the only place they are defined.
+3. **Validate.** Code checks the reply against a schema and the reason list. A bad reply gets one retry with the error fed back.
+4. **Doubt goes up a level.** Low confidence, invalid output, or (optionally) two readings that disagree go to a slower evaluator.
+5. **No guessing.** Still unsure, or the text looks like an instruction to the system: **Needs Review**. A human settles it.
+6. **Keep it.** Every result is stored, with the SKU and vendor if the caller sends them.
+7. **Weekly digest.** Code counts classified returns per SKU and vendor, flags the unusual ones, and names who fixes each:
 
-| Finding | Goes to |
+| Problem group | Goes to |
 |---|---|
-| Fit | Listing team (size chart) |
-| Colour or photo | Studio |
-| Defect | Sourcing |
-| Wrong item | Warehouse |
+| Fit and size | Neha (catalogue, size charts) |
+| Product quality | Vendor QC (Tiruppur, Jaipur) |
+| Not as described | Vivek (listing team, product copy) |
+| Fulfilment error | Warehouse (Unicommerce, three FCs) |
+| Delivery | Faizan (Delhivery, Shiprocket, Ekart) |
+| Customer-side, no defect | Arpita and Sameer (policy, not product) |
+| Unclassifiable | Needs a human |
 
-Neha reads the digest and decides. The threshold is not set yet (see Open questions).
+**How the digest decides.** A SKU is flagged for a problem group when it has at least `DIGEST_MIN_COUNT` (default 5) classified returns in that group in the window **and** the group is at least `DIGEST_MIN_Z` (default 3) standard deviations more common on that SKU than the overall mix predicts. A z-score is used instead of "twice the usual share" because fit is already a large slice of all returns, so "twice as common" can be impossible for it (it would need over 100%). A vendor needs double the count.
+
+Limits, stated plainly:
+- It compares shares of returns, not return rates. The brief gives no units sold per SKU. When the orders table is joined in, swap the share for returns ÷ units sold and keep the same two-part threshold.
+- At a threshold of 3, an occasional SKU still gets flagged by chance when dozens of SKU and group pairs are tested. Every finding shows example customer texts so Neha can check it before acting. The threshold is a starting point to tune with the client.
+- Returns without a SKU are counted but cannot appear in the digest.
 
 ## 3. Where code ends and the model starts
 
 | Step | Code or model | Why |
 |---|---|---|
-| Load "Other" text from the returns data | Code | Lookup |
-| Read messy, Hinglish return text into reasons | Cheap model, temperature 0 | Judgment on messy language |
-| Check the JSON against the schema | Code | Comparison |
-| Re-read low-confidence rows | Stronger model, temperature 0 | Harder judgment, on a small share of rows |
-| Count per SKU and vendor, apply threshold | Code | Counting and comparison |
-| Map reason to team | Code | Lookup table |
-| Decide which fixes to act on | Human (Neha) | The brief wants a human step on purpose |
+| Speech to text (voice only) | Model: `saaras:v4` | Messy audio, many languages |
+| Block text that addresses the system ("ignore previous instructions", reason codes) | Code | Pattern match; the live run showed the model obeying such text, so no model sees it |
+| Read the text into a reason | Model: `sarvam-105b`, reasoning off, temperature 0 | Judgment on messy language |
+| Check the reply against the schema and the 61 codes | Code | Comparison |
+| Re-read doubtful rows | Model: `sarvam-105b`, reasoning on (low), temperature 0 | Harder judgment, small share of rows |
+| Compare two independent readings (optional, `RETURN_SECOND_OPINION=on`) | Code | Equality check |
+| Map reason to owner | Code | Lookup table |
+| Count per SKU and vendor, apply thresholds | Code | Counting and comparison |
+| Settle a Needs Review item | Human | The brief wants a human step on purpose |
 
-Model names: **TBD**. Both models run at temperature 0, because this is classification, not writing.
+All model calls run at **temperature 0**: this is classification, not writing, and no model writes customer-facing text.
+
+**Two-model rule, honestly.** The brief asks for at least two different models. Today the text path uses one LLM (`sarvam-105b`) twice with different reasoning settings, and the voice path adds a second model (`saaras:v4`). A cheaper first-pass model with `sarvam-105b` as the evaluator would be a cleaner split and would cut cost. It is not built, and we have not measured it.
 
 ## 4. Patterns used
 
 | Pattern | Where | What breaks without it |
 |---|---|---|
-| Routing | Cheap model first; low-confidence rows go to the stronger model | Either we pay the strong-model price on every row, or we accept weak answers on the hard ones |
-| Prompt chaining | Read text, extract JSON, validate, aggregate | One big prompt that also counts and routes. Counts drift and nobody can see which step failed |
-| Evaluator-optimizer (validation) | Schema check, retry once, then stronger model, then the unclear queue | Malformed or invented fields flow into the digest unnoticed |
+| Routing | Code decides: accept, straight to Needs Review, or on to the evaluator | Either the slow model runs on every row, or doubtful rows are accepted |
+| Prompt chaining | Transcribe, classify, validate, store, aggregate | One prompt that also counts and routes: counts drift and nobody can see which step failed |
+| Evaluator-optimizer | Schema check, retry with the error, evaluator, then Needs Review | Malformed or invented codes flow into the digest unnoticed |
+| Parallelization (optional) | Two independently worded fast readings at once, compared by code | The model reports 0.8–1.0 confidence even when wrong, so confidence alone cannot catch its mistakes |
 
 ## 5. Run it in five minutes
 
@@ -72,74 +87,110 @@ Needs Python 3.12 and [uv](https://docs.astral.sh/uv/).
 
 ```bash
 uv sync
-cp .env.example .env     # .env.example does not exist yet, see Status
-# fill in the variables below, then:
+cp .env.example .env     # then fill in SARVAM_API_KEY and APP_PASSWORD
 uv run uvicorn main:app --reload
+uv run pytest            # 110 tests, Sarvam is faked, no key or network needed
 ```
 
-Open http://127.0.0.1:8000.
+Open http://127.0.0.1:8000 and sign in with `APP_PASSWORD`.
 
-Variables read by `main.py` today (names only; values go in `.env`, which must never be committed):
+Variables (names only; values go in `.env`, never committed). Everything except the first two is optional, with defaults in `.env.example`:
 
-- `SARVAM_API_KEY` (required)
-- `APP_PASSWORD` (required; shared team password. Unset means the site shows the login page but nobody can sign in)
-- `SARVAM_STT_MODEL`, `SARVAM_LLM_MODEL`
-- `STT_INR_PER_HOUR`, `LLM_INR_PER_M_INPUT`, `LLM_INR_PER_M_OUTPUT`
-- `LLM_REASONING_EFFORT`, `LLM_MAX_TOKENS`
-- `INR_PER_USD`
+- `SARVAM_API_KEY`, `APP_PASSWORD` (required; unset password means nobody can sign in)
+- `RETURN_CONFIDENCE_THRESHOLD`, `RETURN_CLASSIFIER_MODEL`, `RETURN_CLASSIFIER_EFFORT`, `RETURN_EVALUATOR_MODEL`, `RETURN_EVALUATOR_EFFORT`, `RETURN_EVALUATOR_MAX_TOKENS`, `RETURN_SECOND_OPINION`, `RETURN_TIMEOUT_S`
+- `RETURNS_DB` (SQLite file, default `data/returns.db`), `DIGEST_MIN_COUNT`, `DIGEST_MIN_Z`
+- `SARVAM_STT_MODEL`, `SARVAM_LLM_MODEL`, `STT_INR_PER_HOUR`, `LLM_INR_PER_M_INPUT`, `LLM_INR_PER_M_OUTPUT`, `INR_PER_USD`
 
-Live URL: _not deployed yet_ (AWS EC2, Docker, FastAPI). We first planned Hugging Face Spaces (Docker), but our account can only create Static Spaces, which cannot run FastAPI.
+**See the digest without any real data or API key:**
+
+```bash
+uv run python eval/seed_demo.py          # 480 SYNTHETIC returns, stored with source='demo'
+# then, signed in:  GET /api/returns/digest?source=demo
+```
+
+The seeder plants two clusters (fit on one SKU, stitching on another) so there is something to find. Demo rows never mix into `source=live` numbers.
+
+### API
+
+All routes except `/health` need the session cookie from `POST /login`.
+
+| Route | What it does |
+|---|---|
+| `POST /api/returns/analyse` | Form field `text` **or** file `file` (voice), optional `sku`, `vendor`. Returns status, reason, owner, confidence, cost rows and `saved_id`. |
+| `GET /api/returns/taxonomy` | The two-level reason list, generated from `taxonomy.py` |
+| `GET /api/returns/review?state=open\|resolved` | The Needs Review queue (also holds "pending" returns the model could not reach) |
+| `POST /api/returns/review/{id}/resolve` | Form `reason_code` (must be a specific reason from the list), optional `note`. Settles an item once. |
+| `GET /api/returns/stats` | Share classified, route mix, top reasons, total and average cost |
+| `GET /api/returns/digest?days=7&min_count=&min_z=&source=live` | The weekly digest, grouped by owner |
+| `POST /api/parse` | The older generic voice-note parser. Kept, but **not part of the returns flow** (temperature 0.2, no schema check). |
 
 ## 6. What happens when it's wrong
 
-- **Unclear queue.** Anything the models are not sure about is shown on screen as "unclear". It is never guessed into a category.
-- **The bar.** We aim for 90% agreement with a 200-row hand-labelled set. Below that, we say so in the demo.
-- **Failure case shown on purpose.** Not chosen yet. A candidate (our proposal): a return that mixes a fit complaint and a defect in Hinglish, to show the list schema and the unclear queue working.
+- **Needs Review.** Anything the models are not sure about, or that looks like an instruction to the system, is never guessed into a category. It goes to the queue.
+- **Model down.** The API answers 503 with "saved for retry" and keeps the text (or the transcript) on the server, so it is not lost. If speech-to-text itself fails, there is nothing to keep.
+- **Storage down.** The customer still gets the answer; `saved_id` is `null`.
+- **The bar.** We aim for 90% agreement with a 200-row labelled set. See section 7 for where we are.
+- **Failure case shown on purpose.** *"The dress is too tight around my waist."* The model returns `LOOSE_AT_WAIST` at confidence 1.0, which is wrong. Measured in the live run on 3 Oct, not fixed. Cause: the 61-reason list has "loose at waist" and "tight at chest" but no "tight at waist"; the list says to use `SIZE_TOO_SMALL`, and the model does not follow it. It shows why confidence cannot be trusted. Possible fixes, each a team decision: add "tight at waist" (and "loose at chest") to the list, or add a code check on the tight/loose direction.
 
-## 7. Metric
+## 7. Metric and measured results
 
-- Share of "Other" returns that get classified (not sent to "unclear").
-- Agreement with the 200 hand-labelled rows.
+Success measures:
 
-Return rate is a lagging metric. It moves weeks after a size chart is fixed. We only track it as a follow-up, on flagged SKUs 4–6 weeks after the fix. The Discovery note targets 31% down to 26–27% over two collection cycles.
+- **Share of "Other" returns classified instead of sent to review.** Live in `GET /api/returns/stats` once real returns flow in.
+- **Agreement with a labelled set.** See below.
 
-### Cost (our estimate)
+Return rate is a lagging metric. It moves weeks after a size chart is fixed, so we only follow it on flagged SKUs 4–6 weeks after the fix. The Discovery note targets 31% down to 26–27% over two collection cycles.
 
-Prices and token counts below are placeholders from the proposal check, not the models we will choose.
+### Measured on live Sarvam (3 Oct, run 2, taxonomy `team-61-2026-10-03b`)
+
+| Set | Rows | Exact match | Right owner |
+|---|---|---|---|
+| Labelled voice-pack transcripts | 84 | 73 (87%) | 78 (93%) |
+| Hard cases | 38 | 33 (87%) | 37 (97%) |
+| Keyword baseline, same rows | 84 / 38 | 70 / 14 | n/a |
+
+Median 0.8 s per return, about ₹0.08 per return, no small/large direction flips.
+
+**Read these numbers with care.** The hints were tuned after seeing these rows, and the rows are synthetic, so 87% is not an independent score.
+
+### Held-out set (added, not yet run on the model)
+
+`eval/heldout_cases.csv` has 78 new rows written for the 61 reasons after the prompt was frozen: at least 55 of the 61 reasons, Hinglish, English and Devanagari, two-reason cases, near-miss pairs and one injection. With the 84 and 38 rows above the labelled set is **200 rows**. Do not tune the hints on it.
+
+- The held-out rows were drafted by Claude, not hand-labelled by the team. Someone on the team should review the labels before the score is quoted as "agreement with hand labels".
+- The keyword baseline scores **26% (20/78)** on this set, against 83% on the voice pack, so the voice pack is the easy set.
+- The model has not been run on it yet. That needs the API key: `uv run python eval/run_eval.py --only heldout` (about ₹6).
+- `--second-opinion` has been built but never measured.
+
+### Cost (measured per return, arithmetic at volume)
 
 ```
-Returns:        48,000 × 31%             = 14,880 per week        (from the brief)
-"Other" only:   14,880 × 44%             = about 6,550 per week
-Per return:     cheap 2,200 in / 210 out at $1 / $5 per M   = $0.0033
-                15% re-read, 1,200 in / 150 out at $3 / $15 per M
-                                         = $0.0059 × 0.15   = $0.0009
-                                         total              = about $0.0041
-Per week:       6,550 × $0.0041          = about $27
-In rupees:      $27 × ₹85                = about ₹2,300 per week
-Per year:       ₹2,300 × 52              = about ₹1.2 lakh
+Per return, measured:        ₹0.08   (our 3 Oct live run)
+"Other" returns only:        6,550 per week × ₹0.08  = about ₹524 per week
+Every return (14,880/wk):    14,880 × ₹0.08          = about ₹1,190 per week
+Per year, every return:      ₹1,190 × 52             = about ₹62,000
+Voice adds speech-to-text:   ₹30 per audio hour (Sarvam list price in main.py, verify)
+Volumes are from the brief. The ₹0.08 is from our run on synthetic text; real returns may be longer.
 ```
-
-For reference, the same per-return cost on all 14,880 returns is about $62 per week (₹5,300 per week).
 
 ## 8. Status
 
-Today the repo holds the docs only. The code below lives in a separate folder (`../P1`) and has not been moved in yet.
+**Built and working**
+- Classifier with the 61-reason list, schema validation, retry, evaluator, injection guard and Needs Review (`returns.py`, `taxonomy.py`)
+- Text and voice input; the page has Type it, Voice note and Pick from list (`static/index.html`)
+- Storage, Needs Review queue API, stats and the weekly digest API (`store.py`, `digest.py`, `main.py`)
+- Evaluation: 200 labelled rows, keyword baseline, live runner (`eval/`)
+- Docker, AWS EC2 deploy with HTTPS, password gate
+- 110 tests
 
-**Exists (from reading the code; not re-run for this README):**
-- `main.py`: a FastAPI voice-note parser. Audio goes to speech-to-text, then to an LLM that returns JSON.
-- Per-step cost tracking in INR and USD (`INR_PER_USD` defaults to 88).
-- `static/index.html`: upload form, parsed result, transcript, cost table.
-
-**Missing against the brief:**
-- The returns pipeline itself (schema, classifier, digest)
-- A second model for low-confidence rows (today: one LLM)
-- Temperature 0 (today: 0.2)
-- Output validation against a schema (today: loose JSON parse, no retry)
-- The unclear queue and the weekly digest screens
-- The 200-row hand-labelled set
-- A Dockerfile and the deploy
-
-The voice-note parser is an optional input channel. We build it in only if time allows, after the core work.
+**Not built**
+- **No screen for the team yet.** The Needs Review queue and the digest are APIs only; `static/index.html` is still the customer form.
+- **No SKU or vendor on the customer screen.** The API accepts them, but the form does not send them.
+- The model has not been run on the held-out set; `--second-opinion` has not been measured.
+- The evaluator is slow and often returns nothing within its token budget; one Sarvam call took 61 s against our 30 s timeout.
+- Model confidence is 0.8–1.0 even when wrong, so the 0.75 threshold rarely triggers.
+- Not tried on a real phone.
+- Two-model split (see section 3).
 
 ## 9. Open questions for the client
 
@@ -152,8 +203,10 @@ From Appendix C of the Discovery note. The brief does not answer them, so we hav
 - Is a size chart shown in the app, and whose chart is it?
 - Is there an exchange flow, or only refunds?
 - GMV check: 48,000 × 52 × ₹840 is about ₹210 crore, not the ₹310 crore in the brief. Which measure is GMV?
+- Units sold per SKU, so the digest can use return rates instead of shares of returns.
+- Which SKU and vendor does each return belong to, and where do we read it from?
 
-Ours, still open: the digest threshold, and the model names.
+Ours, still open: the digest thresholds and the model choice.
 
 ## 10. Team
 
@@ -173,22 +226,22 @@ The other two problems we looked at are kept in the team's local `docs/` folder 
 
 Live URL: https://dhaga.ctrlaltexist.com (AWS EC2 `t3.micro` in `ap-south-1`, built from the `Dockerfile`, Caddy in front for HTTPS).
 
-Check it is up: `curl <live-url>/health` returns `{"status":"ok"}`. This needs no API key.
+Check it is up: `curl https://dhaga.ctrlaltexist.com/health` returns `{"status":"ok"}`. This needs no API key.
 
 Redeploy: every push or merge to `main` deploys automatically (`.github/workflows/deploy.yml`). The workflow opens SSH to its own runner IP for the duration of the deploy, copies the app, rebuilds the container, closes SSH, then checks `/health`. Repo secrets it needs: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` (an IAM user that can edit the security group), `EC2_SSH_KEY` (the private key contents), `SARVAM_API_KEY` and `APP_PASSWORD`.
 
-Manual redeploy, from the repo root:
+**Data survives redeploys.** The returns database is `/home/ubuntu/dhaga-data/returns.db` on the server, mounted into the container at `/home/user/app/data`. It holds customer text: back it up before deleting the instance, and never commit it.
+
+Manual redeploy, from the repo root (copy every module, not only `main.py`):
 
 ```bash
-scp -i ~/.ssh/dhaga-key.pem -r main.py static pyproject.toml uv.lock .python-version Dockerfile .dockerignore ubuntu@<elastic-ip>:/home/ubuntu/app/
-ssh -i ~/.ssh/dhaga-key.pem ubuntu@<elastic-ip> 'cd app && docker build -q -t dhaga . && docker rm -f dhaga; docker run -d --name dhaga --restart unless-stopped -p 127.0.0.1:7860:7860 dhaga'
+scp -i ~/.ssh/dhaga-key.pem -r *.py static pyproject.toml uv.lock .python-version Dockerfile .dockerignore ubuntu@<elastic-ip>:/home/ubuntu/app/
+ssh -i ~/.ssh/dhaga-key.pem ubuntu@<elastic-ip> 'cd app && docker build -q -t dhaga . && docker rm -f dhaga; mkdir -p /home/ubuntu/dhaga-data && docker run -d --name dhaga --restart unless-stopped --env-file /home/ubuntu/dhaga.env -v /home/ubuntu/dhaga-data:/home/user/app/data -p 127.0.0.1:7860:7860 dhaga'
 ```
 
 Caddy (HTTPS, auto-renewing certificate) proxies the domain to the container. SSH is open only to one IP; if yours changes, update the `dhaga-sg` security group. Health check path: `/health`.
 
-Secrets: kept in GitHub repo secrets only. Each deploy writes `SARVAM_API_KEY` to a root-only env file on the server (`/home/ubuntu/dhaga.env`, mode 600) and starts the container with `--env-file`. Never in the repo or the image. To rotate the key, update the GitHub secret and re-run the deploy.
-- `SARVAM_API_KEY` (required for the voice parser)
-- Optional overrides: `SARVAM_STT_MODEL`, `SARVAM_LLM_MODEL`, `STT_INR_PER_HOUR`, `LLM_INR_PER_M_INPUT`, `LLM_INR_PER_M_OUTPUT`, `LLM_REASONING_EFFORT`, `LLM_MAX_TOKENS`, `INR_PER_USD`
+Secrets: kept in GitHub repo secrets only. Each deploy writes `SARVAM_API_KEY` and `APP_PASSWORD` to a root-only env file on the server (`/home/ubuntu/dhaga.env`, mode 600) and starts the container with `--env-file`. Never in the repo or the image. To rotate a key, update the GitHub secret and re-run the deploy.
 
 Cold start: the EC2 instance stays on, so there is no cold start. Before a demo, open `/health` once to confirm it answers.
 
