@@ -133,6 +133,7 @@
     <h2 id="orders-title" tabindex="-1">Which item are you returning?</h2>
     <p class="muted">Tap the item. Then just tell us what's wrong.</p>
     <div id="orders"></div>
+    <p class="center hidden" id="reset-row"><button class="linkbtn" id="reset" type="button">Start the demo again (clear these returns)</button></p>
   </section>
 
   <!-- 2. Voice first, typing second -->
@@ -285,6 +286,8 @@ function renderOrders() {
     });
     box.appendChild(card);
   });
+  // Offered only when there is something to clear.
+  $("reset-row").classList.toggle("hidden", !orders.some(o => o.items.some(it => it.return)));
   $("orders-title").textContent = customer.name ? "Hi " + customer.name + ", which item are you returning?" : "Which item are you returning?";
 }
 
@@ -589,6 +592,16 @@ document.querySelectorAll("[data-back]").forEach(b => b.addEventListener("click"
   else if (to === "category") show("category");
 }));
 $("again").addEventListener("click", () => { item = order = last = rid = viewing = null; updating = false; fetchOrders().catch(() => {}); show("orders"); });
+$("reset").addEventListener("click", async () => {
+  if (!confirm("Clear every return on these orders? The saved reasons and voice notes are deleted.")) return;
+  try {
+    const r = await fetch("/api/orders/reset", { method: "POST" });
+    if (r.status === 401) return location.reload();
+    if (!r.ok) throw new Error("reset failed");
+    store.set(PENDING_KEY, null); banner("");   // a reason kept on this device for retry belongs to the old run
+    await fetchOrders();
+  } catch (e) { banner("We couldn't clear the returns. Please try again."); $("retry").onclick = () => { banner(""); $("reset").click(); }; }
+});
 $("signout").addEventListener("click", async () => {
   try { await fetch("/logout", { method: "POST" }); } catch (e) { /* ignore */ }
   location.reload();

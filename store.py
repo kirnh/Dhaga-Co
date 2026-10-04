@@ -182,6 +182,21 @@ def latest_by_item() -> dict:
     return {(r["order_id"], r["sku"]): _row(r) for r in rows}
 
 
+def clear_orders(order_ids: list[str]) -> tuple[int, list[str]]:
+    """Delete the live returns filed against these orders, so their items can be returned again.
+    Returns (rows deleted, names of their voice files). Seeded demo rows and returns with no
+    order are left alone."""
+    if not order_ids:
+        return 0, []
+    marks = ",".join("?" * len(order_ids))
+    where = f"source = 'live' AND order_id IN ({marks})"
+    with _db() as db:
+        files = [r["audio_file"] for r in db.execute(
+            f"SELECT audio_file FROM returns WHERE {where} AND audio_file IS NOT NULL", order_ids)]
+        deleted = db.execute(f"DELETE FROM returns WHERE {where}", order_ids).rowcount
+    return deleted, files
+
+
 def _row(r: sqlite3.Row) -> dict:
     d = dict(r)
     d["details"] = json.loads(d["details"] or "[]")
