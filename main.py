@@ -296,6 +296,17 @@ def list_orders():
         {**o, "items": [{**i, "return": summary(o["id"], i["sku"])} for i in o["items"]]} for o in orders.ORDERS]}
 
 
+@app.post("/api/orders/reset", dependencies=[Depends(require_login)])
+def reset_orders():
+    """Demo helper: clear the returns filed against the demo orders, so every item shows "Return"
+    again. Deletes those rows and their voice notes for good; they also leave the review queue
+    and the digest. Nothing else in the database is touched."""
+    cleared, files = store.clear_orders([o["id"] for o in orders.ORDERS])
+    for name in files:
+        _drop_audio(name)
+    return {"cleared": cleared}
+
+
 PENDING_MESSAGE = "We couldn't analyse this right now. Your return reason has been saved for retry."
 
 
