@@ -4,6 +4,7 @@ import os
 import asyncio
 import hashlib
 import hmac
+import logging
 import re
 import secrets
 import time
@@ -16,8 +17,12 @@ from mutagen import File as MutagenFile
 
 load_dotenv()  # before importing returns, which reads its settings from the environment
 
+import digest  # noqa: E402
 import returns  # noqa: E402
+import store  # noqa: E402
 import taxonomy  # noqa: E402
+
+log = logging.getLogger("dhaga")
 
 API_KEY = os.getenv("SARVAM_API_KEY")
 BASE_URL = "https://api.sarvam.ai"
@@ -277,6 +282,8 @@ async def analyse_return(
     text: str | None = Form(None),
     file: UploadFile | None = File(None),
     language_code: str = Form("unknown"),  # "unknown" = Sarvam auto-detects the language
+    sku: str | None = Form(None),     # which product this return is about; the weekly digest groups by it
+    vendor: str | None = Form(None),
 ):
     """Customer return reason as text OR a voice note -> structured reason.
 
@@ -289,6 +296,7 @@ async def analyse_return(
     if bool(audio) == bool(text):
         raise HTTPException(400, "Send either a typed reason or a voice note (one, not both).")
 
+    sku, vendor = _product_ref("sku", sku), _product_ref("vendor", vendor)
     steps: list[dict] = []
     source = {"mode": "voice" if audio else "text", "text": text, "detected_language": None}
     try:
@@ -304,17 +312,92 @@ async def analyse_return(
             steps += llm_steps
     except UpstreamError as e:
         # Fail visibly, never as a 401 (the page treats 401 as "signed out").
-        # Whatever we already have (typed text or transcript) goes back so nothing is lost.
+        # Whatever we already have (typed text or transcript) goes back so nothing is lost,
+        # and is also kept on the server so the team can settle it.
+        costs = cost_summary(steps)
+        saved_id = _keep(lambda: store.save_pending(source, e.stage, costs, sku, vendor)) if source["text"] else None
         return JSONResponse(status_code=503, content={
             "status": "pending", "message": PENDING_MESSAGE, "failed_step": e.stage,
-            "input": source, "costs": cost_summary(steps),
+            "input": source, "costs": costs, "saved_id": saved_id,
         })
     for s in steps:
         s.pop("finish_reason", None)
+    costs, meta = cost_summary(steps), returns.run_meta()
+    saved_id = _keep(lambda: store.save_result(source, result.model_dump(), costs, meta, sku, vendor))
     return {
         "status": result.status,
         "input": source,
         "result": result.model_dump(),
-        "costs": cost_summary(steps),
-        "meta": returns.run_meta(),
+        "costs": costs,
+        "meta": meta,
+        "saved_id": saved_id,  # None means the answer is shown but could not be stored
     }
+
+
+PRODUCT_REF = re.compile(r"^[\w .,/&()'-]{1,64}$")
+
+
+def _product_ref(field: str, value: str | None) -> str | None:
+    """A SKU or vendor name from the caller: optional, short, plain text."""
+    value = (value or "").strip()
+    if not value:
+        return None
+    if not PRODUCT_REF.match(value):
+        raise HTTPException(422, f"{field} must be 1-64 plain characters (letters, digits, space and . , / & ( ) ' -).")
+    return value
+
+
+def _keep(save):
+    """Storing is secondary: if the database fails the customer still gets their answer."""
+    try:
+        return save()
+    except Exception:
+        log.exception("could not store the return")
+        return None
+
+
+@app.get("/api/returns/review", dependencies=[Depends(require_login)])
+def returns_review(state: str = "open"):
+    """The team's queue: returns the system would not guess (Needs Review) or could not read yet (pending)."""
+    if state not in ("open", "resolved"):
+        raise HTTPException(400, "state must be 'open' or 'resolved'")
+    items = store.review_queue(state)
+    return {"state": state, "count": len(items), "items": items}
+
+
+@app.post("/api/returns/review/{return_id}/resolve", dependencies=[Depends(require_login)])
+def returns_resolve(return_id: int, reason_code: str = Form(...), note: str = Form("")):
+    """The team picks the right reason for a queued return. The code must be one from the list."""
+    if reason_code not in taxonomy.REASONS:
+        raise HTTPException(422, f"'{reason_code}' is not a reason code from the list")
+    if taxonomy.is_unclear(reason_code):
+        raise HTTPException(422, "Pick a specific reason. An unclear reason cannot settle an item.")
+    row = store.resolve(return_id, reason_code, note)
+    if row is None:
+        raise HTTPException(404, "No open item with that id (it may already be settled).")
+    return row
+
+
+@app.get("/api/returns/stats", dependencies=[Depends(require_login)])
+def returns_stats():
+    """Share classified, route mix and cost so far. The numbers behind the success metric."""
+    return store.stats()
+
+
+
+@app.get("/api/returns/digest", dependencies=[Depends(require_login)])
+def returns_digest(days: int = 7, min_count: int | None = None, min_z: float | None = None,
+                   source: str = "live"):
+    """Weekly digest: SKUs and vendors with an unusually common problem, grouped by who fixes it.
+
+    source is 'live' (real returns), 'demo' (synthetic rows from eval/seed_demo.py) or 'all'.
+    """
+    if not 1 <= days <= 365:
+        raise HTTPException(400, "days must be between 1 and 365")
+    if min_count is not None and min_count < 1:
+        raise HTTPException(400, "min_count must be at least 1")
+    if min_z is not None and min_z < 0:
+        raise HTTPException(400, "min_z must not be negative")
+    if source not in ("live", "demo", "all"):
+        raise HTTPException(400, "source must be live, demo or all")
+    return digest.build(days, min_count, min_z, source)
