@@ -67,7 +67,9 @@ jobs:
             docker build -q -t dhaga:new .
             docker tag dhaga:new dhaga:latest
             docker rm -f dhaga >/dev/null 2>&1 || true
-            docker run -d --name dhaga --restart unless-stopped --env-file /home/ubuntu/dhaga.env -p 127.0.0.1:7860:7860 dhaga:latest
+            # Returns database lives on the host so a redeploy does not wipe it. The container user is uid 1000 (ubuntu).
+            mkdir -p /home/ubuntu/dhaga-data
+            docker run -d --name dhaga --restart unless-stopped --env-file /home/ubuntu/dhaga.env -v /home/ubuntu/dhaga-data:/home/user/app/data -p 127.0.0.1:7860:7860 dhaga:latest
             docker image prune -f >/dev/null
           '
 

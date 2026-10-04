@@ -15,6 +15,8 @@ RUN uv sync --frozen --no-dev --no-install-project
 
 COPY --chown=user *.py ./
 COPY --chown=user static ./static
+# Mount point for the returns database (a volume in production)
+RUN mkdir -p data
 
 EXPOSE 7860
 # Render sets PORT; default 7860 for local runs

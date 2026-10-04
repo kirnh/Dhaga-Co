@@ -2,7 +2,8 @@
 
     uv run python eval/run_eval.py --baseline         # keyword baseline, no API key, free
     uv run python eval/run_eval.py --limit 5          # quick live check (needs SARVAM_API_KEY in .env)
-    uv run python eval/run_eval.py                    # full live run, about 120 rows
+    uv run python eval/run_eval.py                    # full live run, about 200 rows
+    uv run python eval/run_eval.py --only heldout     # just the held-out set (never tune hints on it)
     uv run python eval/run_eval.py --no-evaluator     # ablation: first pass only
     uv run python eval/run_eval.py --second-opinion   # two independent fast readings, compared by code
     uv run python eval/run_eval.py --audio-dir ~/Downloads/Dhaga_ReturnReasons_Audio   # voice path
@@ -79,6 +80,11 @@ def load_rows(script: str) -> list[dict]:
             rows.append({"id": r["id"], "set": "hard", "expected": r["expected"],
                          "expected_secondary": r["expected_secondary"], "label_spoken": "no",
                          "text": r["text"], "audio_file": ""})
+    with open(HERE / "heldout_cases.csv", encoding="utf-8", newline="") as f:
+        for r in csv.DictReader(f):
+            rows.append({"id": r["id"], "set": "heldout", "expected": r["expected"],
+                         "expected_secondary": r["expected_secondary"], "label_spoken": "no",
+                         "text": r["text"], "audio_file": ""})
     in_prompt = {text for text, _, _ in EXAMPLES}
     for r in rows:
         r["in_prompt"] = "yes" if r["text"] in in_prompt else "no"
@@ -137,8 +143,10 @@ def summarise(rows, name) -> str:
 
     lab = [r for r in rows if r["set"] == "labelled"]
     hard = [r for r in rows if r["set"] == "hard"]
+    held = [r for r in rows if r["set"] == "heldout"]
     out = [f"Run: {name}", f"Settings: {returns.run_meta()}", ""]
-    for title, group in (("Labelled voice-pack transcripts", lab), ("Hard cases", hard)):
+    for title, group in (("Labelled voice-pack transcripts", lab), ("Hard cases", hard),
+                         ("Held-out cases (written after the prompt was frozen)", held)):
         if not group:
             continue
         done = [r for r in group if r["status"] != "error"]
@@ -199,7 +207,7 @@ def main_cli():
     p.add_argument("--script", choices=["roman", "devanagari"], default="roman", help="which transcript column to use")
     p.add_argument("--audio-dir", help="folder holding the unzipped voice pack; runs speech-to-text on each clip")
     p.add_argument("--limit", type=int, help="only the first N rows")
-    p.add_argument("--only", choices=["labelled", "hard"], help="run one of the two sets")
+    p.add_argument("--only", choices=["labelled", "hard", "heldout"], help="run one of the three sets")
     p.add_argument("--name", help="label for the output files")
     p.add_argument("--pause", type=float, default=0.5, help="seconds between rows (rate limit)")
     p.add_argument("--timeout", type=float, default=120)

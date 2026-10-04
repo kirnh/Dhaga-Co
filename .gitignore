@@ -7,3 +7,6 @@ docs/
 # evaluation outputs (may contain transcripts; share them, don't commit them)
 eval/results-*.csv
 eval/summary-*.txt
+
+# returns database (customer text); never commit
+data/
