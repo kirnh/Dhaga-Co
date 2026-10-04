@@ -112,7 +112,7 @@ The seeder plants two clusters (fit on one SKU, stitching on another) so there i
 
 ### The customer screen and the demo orders
 
-Customer flow: pick an item from an order, then voice (default), or text, and only when we are not sure a category tile and a reason list. A confident, consistent answer is accepted with no question. Add `?staff` to the URL to see owner, route, confidence and cost on the last screen.
+Customer flow: pick an item from an order, then voice (default), an uploaded voice file (backup), or text. A confident, consistent answer is accepted with no question, and the last screen shows every tier: category, reason, any second issue and details. The last screen is also the **return page**: what the customer gave us (the voice note with playback and its transcript, or the typed text, or "chosen from the list"), how it was read, who decided, and a "Change reason" button. The orders page links every requested item to it ("View"), and that state comes from the server, so it survives a reload. If the model cannot tell, the item is marked **unclear** for the team and the customer is asked nothing more. The two-level list (category, then reason) exists only as a choice the customer makes ("Choose from a list instead") or after saying No to a confirm. Add `?staff` to the URL to see owner, route, confidence and cost on the last screen.
 
 **Direction check (code).** The model once answered "too tight around my waist" with `LOOSE_AT_WAIST` at 1.0 confidence, so confidence cannot catch it. `returns.direction_conflict()` compares tight/loose and short/long words (English, Hinglish, Devanagari) with the direction of the reason. A clear opposite sets `needs_confirm` and the screen asks "Did we get that right?". It never changes the reason. Text that mentions both sides is left alone.
 
@@ -130,8 +130,10 @@ All routes except `/health` need the session cookie from `POST /login`.
 
 | Route | What it does |
 |---|---|
-| `POST /api/returns/analyse` | Form field `text` **or** file `file` (voice), optional `sku`, `vendor`. Returns status, reason, owner, confidence, cost rows and `saved_id`. |
-| `GET /api/orders` | The three demo orders (2-3 items each) the customer picks a return from. No orders feed exists in this MVP. |
+| `POST /api/returns/analyse` | Form field `text` **or** file `file` (voice, max 10 MB, kept for playback), optional `sku`, `vendor`, `order_id`, and `return_id` to change an earlier return (rewritten in place, so nothing is counted twice; refused with 409 once the team has settled it). Returns status, reason, owner, confidence, cost rows and `saved_id`. |
+| `GET /api/orders` | The three demo orders (2-3 items each) the customer picks a return from. No orders feed exists in this MVP. Each item carries a `return` summary once one exists, so the page can link to it. |
+| `GET /api/returns/{id}` | One return as the customer sees it: raw input (typed text, or the transcript and an `audio_url`), category, reason, second issue, details, who decided (system, customer or team), `can_update`. |
+| `GET /api/returns/{id}/audio` | The customer's own voice note, for playback. |
 | `POST /api/returns/choose` | Form `reason_code`, optional `sku`, `vendor`, `return_id`, `text`. The customer picked the reason from the tiles: stored (`route=customer`), replaces the model's row when `return_id` is given. "Something else" goes to the Needs Review queue. No model call. |
 | `GET /api/returns/taxonomy` | The two-level reason list, generated from `taxonomy.py` |
 | `GET /api/returns/review?state=open\|resolved` | The Needs Review queue (also holds "pending" returns the model could not reach) |

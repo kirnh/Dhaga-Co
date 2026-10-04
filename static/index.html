@@ -81,7 +81,21 @@
   .rows { display:flex; flex-direction:column; gap:8px; margin-top:14px; }
   .row { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px; min-height:52px; text-align:left; cursor:pointer; font-weight:600; }
   .row.suggest { border-color:var(--indigo); background:var(--indigo-soft); }
-  .tag { font-size:12px; font-weight:700; color:var(--indigo); margin-left:6px; }
+  h3.sec { font-size:14px; font-weight:600; color:var(--muted); margin:18px 0 6px; }
+  .box { padding:14px 16px; }
+  .box audio { width:100%; margin:6px 0 12px; }
+  .box .lbl { color:var(--muted); font-size:14px; }
+  .box .heard { margin:4px 0 0; }
+  .req { font-size:13px; font-weight:600; color:var(--ok); }
+  .req.review { color:var(--review); }
+  .note { background:var(--review-soft); color:var(--review); border-radius:10px; padding:10px 14px; margin-top:14px; font-size:14px; }
+  .upload { display:inline-block; cursor:pointer; }
+  .links { display:flex; justify-content:center; gap:22px; flex-wrap:wrap; }
+  .tiers { text-align:left; margin-top:16px; padding:14px 16px; }
+  .tiers dl { margin:0; font-size:15px; }
+  .tiers dd { font-weight:600; }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; }
+  .chips span { background:var(--indigo-soft); border-radius:6px; padding:2px 8px; font-size:14px; font-weight:400; }
 
   /* confirm and done */
   .heard { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px; margin:10px 0 0; white-space:pre-wrap; word-break:break-word; }
@@ -126,13 +140,18 @@
     <button class="linkbtn back" type="button" data-back="orders">‹ Back to orders</button>
     <div class="card picked" id="speak-item"></div>
     <h2 id="speak-title" tabindex="-1">Tell us what's wrong</h2>
+    <p class="muted hidden" id="speak-note"></p>
 
     <div id="voice-pane">
-      <div class="mic-wrap">
+      <div class="mic-wrap" id="mic-wrap">
         <button id="mic" class="mic" type="button" aria-label="Start recording">🎙</button>
         <div id="mic-label" class="mic-label" aria-live="polite">Tap and speak in Hindi, English or Hinglish</div>
       </div>
-      <p class="center"><button class="linkbtn" id="to-text" type="button">Prefer typing?</button></p>
+      <div class="links">
+        <label class="linkbtn upload" for="file" id="upload-label">Upload a voice file</label>
+        <button class="linkbtn" id="to-text" type="button">Prefer typing?</button>
+      </div>
+      <input id="file" type="file" class="hidden" accept="audio/*,.m4a,.mp3,.wav,.ogg,.opus,.flac,.aac,.webm">
     </div>
 
     <div id="text-pane" class="hidden">
@@ -159,7 +178,7 @@
     </div>
   </section>
 
-  <!-- 4. Category, 5. sub-category: only when we could not tell, or the customer said No -->
+  <!-- 4. Category, 5. sub-category: the list the customer chooses to use (or reaches by saying No). Full depth only here. -->
   <section id="s-category" class="hidden">
     <button class="linkbtn back" type="button" data-back="speak" id="cat-back">‹ Back</button>
     <h2 id="category-title" tabindex="-1">What best describes the problem?</h2>
@@ -175,14 +194,21 @@
     <div id="error-reason" class="inline-error" role="alert"></div>
   </section>
 
-  <section id="s-done" class="hidden center">
-    <div class="check" id="done-check" aria-hidden="true">✓</div>
-    <h2 id="done-title" tabindex="-1">Return requested</h2>
-    <p id="done-item" class="muted"></p>
-    <p id="done-reason"></p>
-    <p id="done-review" class="hidden">We couldn't tell the reason from this, so our team will look at it. Nothing has been guessed.</p>
+  <!-- The return page: what the customer gave us, how we read it, and a way to change it. Also what the orders page opens. -->
+  <section id="s-done" class="hidden">
+    <div class="center">
+      <div class="check" id="done-check" aria-hidden="true">✓</div>
+      <h2 id="done-title" tabindex="-1">Return requested</h2>
+      <p id="done-item" class="muted"></p>
+    </div>
+    <p id="done-review" class="note hidden"></p>
+    <h3 class="sec">What you told us</h3>
+    <div class="card box" id="input-box"></div>
+    <h3 class="sec">How we read it</h3>
+    <div class="card tiers"><dl id="tiers-dl"></dl></div>
+    <button class="secondary" id="change" type="button">Change reason</button>
     <button class="primary" id="again" type="button">Back to orders</button>
-    <details class="staff hidden" id="staff" style="text-align:left">
+    <details class="staff hidden" id="staff">
       <summary>Team details</summary>
       <dl id="staff-dl"></dl>
     </details>
@@ -191,14 +217,16 @@
 
 <script>
 const $ = id => document.getElementById(id);
-const PENDING_KEY = "dhaga_pending_return", DONE_KEY = "dhaga_returned_items";
+const PENDING_KEY = "dhaga_pending_return";
 const STAFF = new URLSearchParams(location.search).has("staff");   // ?staff shows the team details on the last screen
 const ICONS = { FIT: "📏", QUALITY: "🧵", NOT_AS_DESCRIBED: "🖼", FULFILMENT: "📦", DELIVERY: "🚚", CUSTOMER: "💭", UNCLEAR: "❔" };
-const MAX_RECORD_S = 60;
+const MAX_RECORD_S = 60, MAX_UPLOAD_MB = 10;
 
 let customer = {}, orders = [], menu = [];
 let item = null, order = null;          // what is being returned
-let saved = null;                       // the saved row of the last analysis (so a pick from the tiles corrects it)
+let rid = null;                         // the saved return being worked on (its id), so a change or a pick corrects it in place
+let updating = false;                   // true when the customer is changing a return that already exists
+let viewing = null;                     // the return page's data
 let last = null;                        // the last analysis, for confirm / suggestions
 let pendingFile = null;                 // a voice note cannot go in localStorage; kept in memory for retry
 let busy = false;
@@ -208,7 +236,6 @@ const store = {
   get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch (e) { return d; } },
   set(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* private mode */ } },
 };
-const returned = () => store.get(DONE_KEY, {});
 const rupees = n => "₹" + n.toLocaleString("en-IN");
 const dateText = iso => new Date(iso + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" });
 function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
@@ -235,7 +262,6 @@ function itemLine(it) {
 /* ---------- 1. orders ---------- */
 function renderOrders() {
   const box = $("orders"); box.textContent = "";
-  const did = returned();
   orders.forEach(o => {
     const card = el("div", "card order");
     const head = el("div", "order-head");
@@ -243,13 +269,18 @@ function renderOrders() {
     head.appendChild(el("span", "muted", "Delivered " + dateText(o.delivered) + " · " + o.payment));
     card.appendChild(head);
     o.items.forEach(it => {
+      const r = it.return;                                   // set by the server once a return exists for this item
       const b = el("button", "item"); b.type = "button";
-      b.appendChild(swatch(it)); b.appendChild(itemLine(it));
-      const done = did[it.sku];
-      b.appendChild(el("span", "item-cta" + (done ? " done" : ""), done ? "Requested ✓" : "Return ›"));
-      b.disabled = !!done;
-      b.setAttribute("aria-label", (done ? "Return requested for " : "Return ") + it.name);
-      b.addEventListener("click", () => startReturn(o, it));
+      const text = itemLine(it);
+      if (r) {
+        const review = r.unclear || r.status === "pending";
+        text.appendChild(el("div", "req" + (review ? " review" : ""),
+          r.status === "pending" ? "Saved · our team will look at it" : r.unclear ? "Marked unclear" : "Requested · " + r.reason));
+      }
+      b.appendChild(swatch(it)); b.appendChild(text);
+      b.appendChild(el("span", "item-cta" + (r ? " done" : ""), r ? "View ›" : "Return ›"));
+      b.setAttribute("aria-label", (r ? "View the return for " : "Return ") + it.name);
+      b.addEventListener("click", () => r ? openReturn(o, it, r.id) : startReturn(o, it));
       card.appendChild(b);
     });
     box.appendChild(card);
@@ -257,13 +288,15 @@ function renderOrders() {
   $("orders-title").textContent = customer.name ? "Hi " + customer.name + ", which item are you returning?" : "Which item are you returning?";
 }
 
+async function fetchOrders() {
+  const r = await fetch("/api/orders");
+  if (r.status === 401) return location.reload();
+  const d = await r.json(); customer = d.customer; orders = d.orders;
+  renderOrders();
+}
 async function loadOrders() {
-  try {
-    const r = await fetch("/api/orders");
-    if (r.status === 401) return location.reload();
-    const d = await r.json(); customer = d.customer; orders = d.orders;
-    renderOrders();
-  } catch (e) { banner("We couldn't load your orders. Check your connection."); $("retry").onclick = () => { banner(""); loadOrders(); }; }
+  try { await fetchOrders(); }
+  catch (e) { banner("We couldn't load your orders. Check your connection."); $("retry").onclick = () => { banner(""); loadOrders(); }; }
   show("orders");
   loadMenu();
 }
@@ -275,13 +308,18 @@ async function loadMenu() {
 }
 
 /* ---------- 2. speak or type ---------- */
-function startReturn(o, it) {
-  order = o; item = it; saved = null; last = null; pendingFile = null;
+function startReturn(o, it, existing) {          // existing: the return page's data, when the customer is changing it
+  order = o; item = it; rid = existing ? existing.id : null; updating = !!existing; last = null; pendingFile = null;
   const line = $("speak-item"); line.textContent = "";
   line.appendChild(swatch(it)); line.appendChild(itemLine(it));
-  $("text").value = ""; $("error").textContent = ""; $("error-choose").textContent = "";
+  $("text").value = existing && existing.mode === "text" ? existing.text : "";
+  $("speak-note").textContent = "Updating your return. Tell us again, or choose from the list.";
+  $("speak-note").classList.toggle("hidden", !existing);
+  $("error").textContent = ""; $("error-choose").textContent = "";
   banner(""); setMicIdle(); useVoice();
+  $("mic-wrap").classList.toggle("hidden", !canRecord());           // no recording on this device: upload or type
   show("speak");
+  if (!canRecord()) $("error").textContent = "Recording isn't available on this device. Upload a voice file or type.";
 }
 function useText(msg) {
   $("voice-pane").classList.add("hidden"); $("text-pane").classList.remove("hidden");
@@ -291,8 +329,15 @@ function useVoice() {
   $("text-pane").classList.add("hidden"); $("voice-pane").classList.remove("hidden"); $("error").textContent = "";
 }
 $("to-text").addEventListener("click", () => useText());
-$("to-voice").addEventListener("click", () => canRecord() ? useVoice() : useText("Recording isn't available on this device. Please type."));
+$("to-voice").addEventListener("click", useVoice);
 $("to-list").addEventListener("click", () => openCategories("speak", null, "Choose what fits best."));
+$("file").addEventListener("change", e => {          // backup for a recorded file (or a device that cannot record)
+  const f = e.target.files[0]; e.target.value = "";
+  if (!f) return;
+  if (f.size > MAX_UPLOAD_MB * 1024 * 1024) { $("error").textContent = "That file is too big. Please choose one under " + MAX_UPLOAD_MB + " MB."; return; }
+  if (f.type && !f.type.startsWith("audio/") && !f.type.startsWith("video/")) { $("error").textContent = "Please choose an audio file."; return; }
+  analyse("", f);
+});
 
 const canRecord = () => !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder);
 let rec = null, chunks = [], stream = null, tick = null, startedAt = 0;
@@ -304,10 +349,9 @@ function setMicIdle(label) {
 async function toggleRecording() {
   if (busy) return;
   if (rec && rec.state === "recording") return rec.stop();
-  if (!canRecord()) return useText("Recording isn't available on this device. Please type.");
   $("error").textContent = "";
   try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
-  catch (e) { return useText("We couldn't use the microphone. Please type instead."); }
+  catch (e) { $("error").textContent = "We couldn't use the microphone. Upload a voice file or type instead."; return; }
   const mime = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;codecs=opus"].find(t => MediaRecorder.isTypeSupported(t)) || "";
   chunks = [];
   rec = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
@@ -340,7 +384,7 @@ $("go").addEventListener("click", () => {
 /* ---------- analysing ---------- */
 function working(on, text) {
   busy = on;
-  $("mic").disabled = on; $("go").disabled = on; $("go").textContent = on ? "One moment…" : "Done";
+  $("mic").disabled = on; $("go").disabled = on; $("file").disabled = on; $("go").textContent = on ? "One moment…" : "Done";
   if (on) { $("mic").classList.remove("rec"); $("mic").textContent = "…"; $("mic-label").textContent = text || "Understanding what you said…"; }
   else setMicIdle();
 }
@@ -350,7 +394,8 @@ async function analyse(text, file) {
   $("error").textContent = "";
   const fd = new FormData();
   if (file) fd.append("file", file); else fd.append("text", text);
-  fd.append("sku", item.sku); fd.append("vendor", item.vendor);
+  fd.append("sku", item.sku); fd.append("vendor", item.vendor); fd.append("order_id", order.id);
+  if (rid) fd.append("return_id", rid);
   try {
     let r;
     try { r = await fetch("/api/returns/analyse", { method: "POST", body: fd }); }
@@ -371,7 +416,7 @@ async function analyse(text, file) {
 /* the single small banner: saved, will retry */
 function keepForRetry(text, file) {
   pendingFile = file || null;
-  if (text) store.set(PENDING_KEY, { text, sku: item.sku, orderId: order.id });
+  if (text) store.set(PENDING_KEY, { text, sku: item.sku, orderId: order.id, rid });
   banner(file && !text ? "Couldn't reach us. Your voice note is still here. Keep this page open." : "Couldn't reach us. Your reason is saved.");
   $("retry").onclick = retryPending;
   if (text) $("text").value = text;
@@ -381,7 +426,7 @@ function clearPending() { pendingFile = null; store.set(PENDING_KEY, null); bann
 function retryPending() {
   const p = store.get(PENDING_KEY, null);
   if (!item && p) {   // after a reload: find the item again
-    orders.forEach(o => o.items.forEach(it => { if (it.sku === p.sku) { item = it; order = o; } }));
+    orders.forEach(o => o.items.forEach(it => { if (it.sku === p.sku && o.id === p.orderId) { item = it; order = o; rid = p.rid || null; updating = !!p.rid; } }));
   }
   if (!item) return banner("");
   if (pendingFile) return analyse("", pendingFile);
@@ -390,30 +435,32 @@ function retryPending() {
 }
 
 /* ---------- what happens with the answer ---------- */
+const catLabel = code => { const c = menu.find(x => x.code === code); return c ? (c.customer_label || c.label) : null; };
+const doneTitle = () => updating ? "Return updated" : "Return requested";
+
+function localView(d) {   // only used if the saved copy cannot be read back
+  const r = d.result;
+  return { id: null, mode: d.input.mode, text: d.input.text, language: d.input.detected_language, audio_url: null, status: r.status,
+           category: catLabel(r.primary_category) || r.primary_category_label, reason: r.reason_label,
+           secondary_category: r.secondary_category ? catLabel(r.secondary_category) : null, secondary: r.secondary_reason_label,
+           details: r.details || [], unclear: r.needs_review, decided_by: "system", can_update: false };
+}
 function outcome(d) {
   const res = d.result;
-  last = d; saved = d.saved_id;
-  if (res.needs_review) {                       // we could not tell: the customer picks, with our best guess first
-    const hint = res.review_hint && menu.length ? findReason(res.review_hint) : null;
-    return openCategories("speak", hint, "We couldn't quite tell. Please choose what fits best.");
-  }
-  if (res.needs_confirm) {                      // our reading and the customer's words disagree: ask, do not assume
+  last = d; if (d.saved_id) rid = d.saved_id;
+  if (res.needs_confirm && !res.needs_review) {   // our reading and the customer's words disagree: ask, do not assume
     $("heard").textContent = d.input.text;
     $("understood").textContent = res.reason_label + (res.secondary_reason_label ? " and " + res.secondary_reason_label.toLowerCase() : "");
     return show("confirm");
   }
-  finish(res.reason_label, false);              // confident and consistent: accepted, no question asked
+  // Confident and consistent: accepted. Could not tell: marked unclear for the team. Either way the customer is asked nothing more.
+  showReturn(doneTitle(), localView(d));
 }
-$("yes").addEventListener("click", () => finish(last.result.reason_label, false));
+$("yes").addEventListener("click", () => showReturn(doneTitle(), localView(last)));
 $("no").addEventListener("click", () => openCategories("confirm", { category: last.result.primary_category }, "Sorry about that. Please choose what fits best."));
 
-function findReason(code) {
-  for (const c of menu) { const r = c.reasons.find(x => x.code === code); if (r) return { category: c.code, reason: r.code }; }
-  return null;
-}
-
-/* ---------- 4. category, 5. sub-category ---------- */
-let suggest = null;
+/* ---------- 4. category, 5. sub-category (only the list the customer chooses to use) ---------- */
+let suggest = null;   // category code to put first when the customer said No
 function openCategories(from, hint, note) {
   if (!menu.length) { $("error").textContent = "The list isn't available right now. Please speak or type."; return; }
   suggest = hint;
@@ -426,7 +473,7 @@ function openCategories(from, hint, note) {
     const t = el("button", "tile" + (hint && c.code === hint.category ? " suggest" : "")); t.type = "button";
     t.appendChild(el("span", "ico", ICONS[c.code] || "•"));
     t.appendChild(el("span", null, c.customer_label || c.label));
-    t.addEventListener("click", () => c.needs_review ? choose(c.reasons.find(r => r.code === "UNCLEAR_FREE_TEXT") || c.reasons[0]) : openReasons(c));
+    t.addEventListener("click", () => c.needs_review ? choose(c.reasons.find(r => r.code === "UNCLEAR_FREE_TEXT") || c.reasons[0], c) : openReasons(c));
     tiles.appendChild(t);
   });
   show("category");
@@ -435,19 +482,17 @@ function openReasons(c) {
   $("reason-title").textContent = c.customer_label || c.label;
   $("error-reason").textContent = "";
   const rows = $("rows"); rows.textContent = "";
-  const first = suggest && suggest.reason;                      // the model's low-confidence guess goes first, marked
-  c.reasons.slice().sort((a, b) => (b.code === first) - (a.code === first)).forEach(r => {
-    const b = el("button", "row" + (r.code === first ? " suggest" : ""), r.label); b.type = "button";
-    if (r.code === first) b.appendChild(el("span", "tag", "Maybe this"));
-    b.addEventListener("click", () => choose(r));
+  c.reasons.forEach(r => {
+    const b = el("button", "row", r.label); b.type = "button";
+    b.addEventListener("click", () => choose(r, c));
     rows.appendChild(b);
   });
   show("reason");
 }
-async function choose(reason) {
+async function choose(reason, cat) {
   const fd = new FormData();
-  fd.append("reason_code", reason.code); fd.append("sku", item.sku); fd.append("vendor", item.vendor);
-  if (saved) fd.append("return_id", saved);
+  fd.append("reason_code", reason.code); fd.append("sku", item.sku); fd.append("vendor", item.vendor); fd.append("order_id", order.id);
+  if (rid) fd.append("return_id", rid);
   if (last && last.input) fd.append("text", last.input.text);
   const err = $("s-reason").classList.contains("hidden") ? $("error-choose") : $("error-reason");
   err.textContent = "";
@@ -456,40 +501,86 @@ async function choose(reason) {
     if (r.status === 401) return location.reload();
     const d = await r.json().catch(() => ({}));
     if (!r.ok) { err.textContent = d.detail || "We couldn't save that. Please try again."; return; }
-    finish(d.status === "needs_review" ? null : d.reason_label, d.status === "needs_review", d);
+    if (d.saved_id) rid = d.saved_id;
+    const unclear = d.status === "needs_review";
+    showReturn(doneTitle(), { id: null, mode: last ? last.input.mode : "list", text: last ? last.input.text : "", language: null, audio_url: null,
+      status: d.status, category: unclear ? "Unclear" : (cat.customer_label || cat.label), reason: d.reason_label, secondary: null, details: [],
+      unclear, decided_by: "customer", can_update: false });
   } catch (e) { err.textContent = "We couldn't save that. Check your connection and try again."; }
 }
 
-/* ---------- done ---------- */
-function finish(label, review, chosen) {
-  const did = returned(); did[item.sku] = label || "Under review"; store.set(DONE_KEY, did);
-  $("done-check").classList.toggle("review", review); $("done-check").textContent = review ? "…" : "✓";
-  $("done-title").textContent = review ? "Sent to our team" : "Return requested";
-  $("done-item").textContent = item.name + " · Order " + order.id;
-  $("done-reason").textContent = review ? "" : "We've noted: " + label;
-  $("done-reason").classList.toggle("hidden", review);
-  $("done-review").classList.toggle("hidden", !review);
-  staffPanel(chosen);
-  renderOrders();
+/* ---------- the return page: what we were given, how we read it, change it ---------- */
+async function openReturn(o, it, id) {
+  order = o; item = it; rid = id; updating = false; last = null;
+  await showReturn("Your return", null);
+}
+async function showReturn(title, fallback) {
+  let v = null;
+  if (rid) {   // read the saved copy back, so what the customer sees is exactly what we hold
+    try {
+      const r = await fetch("/api/returns/" + rid);
+      if (r.status === 401) return location.reload();
+      if (r.ok) v = await r.json();
+    } catch (e) { /* fall back to what we just received */ }
+  }
+  v = v || fallback;
+  if (!v) { banner("We couldn't load this return. Please try again."); $("retry").onclick = () => { banner(""); showReturn(title, null); }; return; }
+  banner(""); renderReturn(v, title);
+  fetchOrders().catch(() => {});                // the orders page shows the new state when the customer goes back
   show("done");
 }
-function staffPanel(chosen) {
+function renderReturn(v, title) {
+  viewing = v;
+  const review = v.unclear || v.status === "pending";
+  $("done-check").classList.toggle("review", review); $("done-check").textContent = review ? "?" : "✓";
+  $("done-title").textContent = title;
+  $("done-item").textContent = item.name + " · Order " + order.id;
+  $("done-review").textContent = v.status === "pending"
+    ? "We couldn't read this yet. It's saved, and our team will look at it."
+    : "We couldn't tell the reason from this, so it's marked as unclear. Our team will look at it. Nothing has been guessed.";
+  $("done-review").classList.toggle("hidden", !review);
+
+  // 1. exactly what was given to us
+  const box = $("input-box"); box.textContent = "";
+  if (v.mode === "voice") {
+    box.appendChild(el("div", "lbl", "Your voice note"));
+    if (v.audio_url) { const a = document.createElement("audio"); a.controls = true; a.preload = "metadata"; a.src = v.audio_url; box.appendChild(a); }
+    else box.appendChild(el("p", "muted", "The recording isn't available."));
+    box.appendChild(el("div", "lbl", "What we heard" + (v.language ? " (" + v.language + ")" : "")));
+    box.appendChild(el("div", "heard", v.text));
+  } else if (v.mode === "text") {
+    box.appendChild(el("div", "lbl", "What you typed"));
+    box.appendChild(el("div", "heard", v.text));
+  } else {
+    box.appendChild(el("div", "lbl", "You chose the reason from the list"));
+  }
+
+  // 2. every tier of how it was read
+  const dl = $("tiers-dl"); dl.textContent = "";
+  const add = (k, val) => { dl.appendChild(el("dt", null, k)); dl.appendChild(typeof val === "string" ? el("dd", null, val) : val); };
+  add("Category", v.unclear ? "Unclear" : v.category || "Not read yet");
+  add("Reason", v.reason || "Not read yet");
+  if (v.secondary) add("Also mentioned", (v.secondary_category ? v.secondary_category + " › " : "") + v.secondary);
+  if (v.details && v.details.length) {
+    const chips = el("dd", "chips"); v.details.forEach(t => chips.appendChild(el("span", null, t))); add("Details", chips);
+  }
+  add("Decided by", { system: "Our system", customer: "You chose this", team: "Our team" }[v.decided_by] || "Our system");
+
+  $("change").classList.toggle("hidden", !(v.can_update && v.id));
+  staffPanel(v);
+}
+function staffPanel(v) {
   $("staff").classList.toggle("hidden", !STAFF);
   if (!STAFF) return;
   const dl = $("staff-dl"); dl.textContent = "";
-  const res = last && last.result;
-  const add = (k, v) => { if (v == null || v === "") return; dl.appendChild(el("dt", null, k)); dl.appendChild(el("dd", null, String(v))); };
-  add("SKU / vendor", item.sku + " / " + item.vendor);
-  if (res) {
-    add("Reason", res.reason_code + (res.secondary_reason_code ? " + " + res.secondary_reason_code : ""));
-    add("Owner", res.owner); add("Route", res.route);
-    add("Confidence", Math.round((res.confidence || 0) * 100) + "%");
-    add("Direction check", res.needs_confirm ? "Mismatch: customer asked to confirm" : "No conflict");
-    add("Cost", "₹" + (last.costs.total_inr || 0).toFixed(4));
-    add("Saved as", last.saved_id);
-  }
-  if (chosen) add("Customer chose", chosen.reason_code);
+  const add = (k, val) => { if (val == null || val === "") return; dl.appendChild(el("dt", null, k)); dl.appendChild(el("dd", null, String(val))); };
+  add("Return id", v.id); add("Order / SKU / vendor", [v.order_id || order.id, v.sku || item.sku, v.vendor || item.vendor].join(" / "));
+  add("Owner", v.owner); add("Route", v.route);
+  if (v.confidence != null) add("Confidence", Math.round(v.confidence * 100) + "%");
+  add("Cost so far", v.cost_inr != null ? "₹" + v.cost_inr.toFixed(4) : null); add("Reason list", v.taxonomy_version);
+  if (last && last.result) add("Direction check", last.result.needs_confirm ? "Mismatch: customer asked to confirm" : "No conflict");
 }
+$("change").addEventListener("click", () => startReturn(order, item, viewing));
 
 /* ---------- plumbing ---------- */
 document.querySelectorAll("[data-back]").forEach(b => b.addEventListener("click", () => {
@@ -497,7 +588,7 @@ document.querySelectorAll("[data-back]").forEach(b => b.addEventListener("click"
   if (to === "orders") show("orders"); else if (to === "speak") show("speak");
   else if (to === "category") show("category");
 }));
-$("again").addEventListener("click", () => { item = order = last = saved = null; show("orders"); });
+$("again").addEventListener("click", () => { item = order = last = rid = viewing = null; updating = false; fetchOrders().catch(() => {}); show("orders"); });
 $("signout").addEventListener("click", async () => {
   try { await fetch("/logout", { method: "POST" }); } catch (e) { /* ignore */ }
   location.reload();

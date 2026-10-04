@@ -277,8 +277,23 @@ def returns_taxonomy():
 
 @app.get("/api/orders", dependencies=[Depends(require_login)])
 def list_orders():
-    """The customer's delivered orders (three demo orders; there is no orders feed in this MVP)."""
-    return {"customer": orders.CUSTOMER, "orders": orders.ORDERS}
+    """The customer's delivered orders (three demo orders; there is no orders feed in this MVP).
+    Each item says whether a return was requested for it, so the page can link to that return."""
+    try:
+        requested = store.latest_by_item()
+    except Exception:
+        log.exception("could not read the returns for the orders page")
+        requested = {}
+
+    def summary(order_id, sku):
+        row = requested.get((order_id, sku))
+        if row is None:
+            return None
+        v = _view(row)
+        return {"id": v["id"], "status": v["status"], "reason": v["reason"], "unclear": v["unclear"]}
+
+    return {"customer": orders.CUSTOMER, "orders": [
+        {**o, "items": [{**i, "return": summary(o["id"], i["sku"])} for i in o["items"]]} for o in orders.ORDERS]}
 
 
 PENDING_MESSAGE = "We couldn't analyse this right now. Your return reason has been saved for retry."
@@ -291,19 +306,25 @@ async def analyse_return(
     language_code: str = Form("unknown"),  # "unknown" = Sarvam auto-detects the language
     sku: str | None = Form(None),     # which product this return is about; the weekly digest groups by it
     vendor: str | None = Form(None),
+    order_id: str | None = Form(None),
+    return_id: int | None = Form(None),  # the customer is changing this earlier return: it is rewritten in place
 ):
     """Customer return reason as text OR a voice note -> structured reason.
 
     Voice is transcribed first; after that both inputs go through the same
-    returns.classify_return() call.
+    returns.classify_return() call. A voice note is kept so the customer can play it back.
     """
     headers()
     audio = await file.read() if file is not None and file.filename else b""
     text = (text or "").strip()
     if bool(audio) == bool(text):
         raise HTTPException(400, "Send either a typed reason or a voice note (one, not both).")
+    if len(audio) > MAX_AUDIO_BYTES:
+        raise HTTPException(413, f"That recording is too big. Please keep it under {MAX_AUDIO_BYTES // 1_000_000} MB.")
 
     sku, vendor = _product_ref("sku", sku), _product_ref("vendor", vendor)
+    order_id = _product_ref("order_id", order_id)
+    previous = _changeable(return_id)
     steps: list[dict] = []
     source = {"mode": "voice" if audio else "text", "text": text, "detected_language": None}
     try:
@@ -322,7 +343,9 @@ async def analyse_return(
         # Whatever we already have (typed text or transcript) goes back so nothing is lost,
         # and is also kept on the server so the team can settle it.
         costs = cost_summary(steps)
-        saved_id = _keep(lambda: store.save_pending(source, e.stage, costs, sku, vendor)) if source["text"] else None
+        # (a failed change leaves the earlier return as it was, rather than adding a second row)
+        saved_id = (_keep(lambda: store.save_pending(source, e.stage, costs, sku, vendor, order_id))
+                    if source["text"] and previous is None else None)
         return JSONResponse(status_code=503, content={
             "status": "pending", "message": PENDING_MESSAGE, "failed_step": e.stage,
             "input": source, "costs": costs, "saved_id": saved_id,
@@ -330,7 +353,12 @@ async def analyse_return(
     for s in steps:
         s.pop("finish_reason", None)
     costs, meta = cost_summary(steps), returns.run_meta()
-    saved_id = _keep(lambda: store.save_result(source, result.model_dump(), costs, meta, sku, vendor))
+    saved_id = _keep(lambda: store.save_result(source, result.model_dump(), costs, meta, sku, vendor,
+                                                order_id=order_id, replace_id=return_id))
+    if previous is not None:
+        _drop_audio(previous.get("audio_file"))   # the new input replaces the old one
+    if audio and saved_id:
+        _keep(lambda: _store_audio(saved_id, audio, file.content_type, file.filename))
     return {
         "status": result.status,
         "input": source,
@@ -348,6 +376,7 @@ def choose_reason(
     vendor: str | None = Form(None),
     return_id: int | None = Form(None),  # the earlier saved row to correct, if there was one
     text: str = Form(""),
+    order_id: str | None = Form(None),
 ):
     """The customer picked the reason from the tiles. No model call. The choice is stored, so the
     weekly digest counts it, and it replaces the model's answer when return_id is given."""
@@ -355,12 +384,101 @@ def choose_reason(
     if reason is None:
         raise HTTPException(422, f"'{reason_code}' is not a reason code from the list")
     sku, vendor = _product_ref("sku", sku), _product_ref("vendor", vendor)
+    order_id = _product_ref("order_id", order_id)
+    _changeable(return_id)
     # "Something else" cannot be classified: it goes to the team's queue instead of being guessed.
     status = "needs_review" if taxonomy.is_unclear(reason_code) else "classified"
     saved_id = _keep(lambda: store.save_choice(reason.code, reason.owner, reason.category, status, sku, vendor,
-                                                return_id, text.strip()[:returns.MAX_TEXT_CHARS]))
+                                                return_id, text.strip()[:returns.MAX_TEXT_CHARS], order_id))
     return {"status": status, "reason_code": reason.code, "reason_label": reason.label,
             "category_label": reason.category_label, "owner": reason.owner, "saved_id": saved_id}
+
+
+MAX_AUDIO_BYTES = 10_000_000
+AUDIO_EXT = {"audio/webm": "webm", "video/webm": "webm", "audio/ogg": "ogg", "audio/opus": "ogg", "audio/mp4": "m4a",
+             "audio/x-m4a": "m4a", "audio/m4a": "m4a", "audio/mpeg": "mp3", "audio/mp3": "mp3", "audio/wav": "wav",
+             "audio/x-wav": "wav", "audio/wave": "wav", "audio/flac": "flac", "audio/aac": "aac"}
+AUDIO_MIME = {"webm": "audio/webm", "ogg": "audio/ogg", "m4a": "audio/mp4", "mp3": "audio/mpeg", "wav": "audio/wav",
+              "flac": "audio/flac", "aac": "audio/aac"}
+
+
+def _changeable(return_id: int | None) -> dict | None:
+    """The earlier return a customer wants to change, if it exists and the team has not settled it."""
+    if return_id is None:
+        return None
+    row = store.get(return_id)
+    if row is None:
+        raise HTTPException(404, "We couldn't find that return.")
+    if row.get("resolved_at"):
+        raise HTTPException(409, "Our team has already settled this return, so it can't be changed here.")
+    return row
+
+
+def _store_audio(row_id: int, audio: bytes, content_type: str | None, filename: str | None) -> None:
+    """Keep the voice note beside the database. Only a fixed set of audio types is ever written or served."""
+    ext = AUDIO_EXT.get((content_type or "").split(";")[0].strip().lower())
+    if ext is None:
+        suffix = os.path.splitext(filename or "")[1].lstrip(".").lower()
+        ext = suffix if suffix in AUDIO_MIME else "mp3"
+    name = f"{row_id}-{secrets.token_hex(4)}.{ext}"
+    folder = store.audio_dir()
+    os.makedirs(folder, exist_ok=True)
+    with open(os.path.join(folder, name), "wb") as f:
+        f.write(audio)
+    store.set_audio(row_id, name, AUDIO_MIME[ext])
+
+
+def _drop_audio(name: str | None) -> None:
+    if name:
+        try:
+            os.remove(os.path.join(store.audio_dir(), os.path.basename(name)))
+        except OSError:
+            pass
+
+
+def _view(row: dict) -> dict:
+    """One return as the customer sees it: what they gave us, how we read it, who decided."""
+    code = row.get("resolved_code") or row.get("reason_code")
+    reason = taxonomy.REASONS.get(code) if code else None
+    second = taxonomy.REASONS.get(row.get("secondary_code")) if row.get("secondary_code") and not row.get("resolved_code") else None
+    decided = "team" if row.get("resolved_code") else "customer" if row.get("route") == "customer" else "system"
+    return {
+        "id": row["id"], "status": row["status"], "created_at": row["created_at"],
+        "mode": row["input_mode"], "text": row["text"], "language": row.get("language"),
+        "audio_url": f"/api/returns/{row['id']}/audio" if row.get("audio_file") else None,
+        "category": taxonomy.CUSTOMER_LABELS.get(reason.category) if reason else None,
+        "reason": reason.label if reason else None,
+        "secondary_category": taxonomy.CUSTOMER_LABELS.get(second.category) if second else None,
+        "secondary": second.label if second else None,
+        "details": row.get("details") or [],
+        "unclear": reason is None or taxonomy.is_unclear(code),
+        "decided_by": decided,
+        "can_update": not row.get("resolved_at"),
+        "order_id": row.get("order_id"), "sku": row.get("sku"), "vendor": row.get("vendor"),
+        # for the team panel (?staff)
+        "owner": row.get("owner"), "route": row.get("route"), "confidence": row.get("confidence"),
+        "cost_inr": row.get("cost_inr"), "taxonomy_version": row.get("taxonomy_version"),
+    }
+
+
+@app.get("/api/returns/{return_id:int}", dependencies=[Depends(require_login)])
+def returns_one(return_id: int):
+    """One return: the raw input, the transcript, and every tier of the classification."""
+    row = store.get(return_id)
+    if row is None:
+        raise HTTPException(404, "No such return.")
+    return _view(row)
+
+
+@app.get("/api/returns/{return_id:int}/audio", dependencies=[Depends(require_login)])
+def returns_audio(return_id: int):
+    """The customer's own voice note, for playback."""
+    row = store.get(return_id)
+    name = row.get("audio_file") if row else None
+    path = os.path.join(store.audio_dir(), os.path.basename(name)) if name else None
+    if not path or not os.path.isfile(path):
+        raise HTTPException(404, "No recording for this return.")
+    return FileResponse(path, media_type=row.get("audio_type") or "audio/mpeg")
 
 
 PRODUCT_REF = re.compile(r"^[\w .,/&()'-]{1,64}$")
