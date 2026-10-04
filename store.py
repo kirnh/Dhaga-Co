@@ -183,13 +183,12 @@ def latest_by_item() -> dict:
 
 
 def clear_orders(order_ids: list[str]) -> tuple[int, list[str]]:
-    """Delete the live returns filed against these orders, so their items can be returned again.
-    Returns (rows deleted, names of their voice files). Seeded demo rows and returns with no
-    order are left alone."""
-    if not order_ids:
-        return 0, []
+    """Delete the live returns filed against these orders, so their items can be returned again,
+    and the live returns attached to no order at all (rows from earlier builds and API tests:
+    no screen lists them, so nothing else could ever clear them). Returns (rows deleted, names of
+    their voice files). Seeded demo rows and returns on any other order are left alone."""
     marks = ",".join("?" * len(order_ids))
-    where = f"source = 'live' AND order_id IN ({marks})"
+    where = f"source = 'live' AND (order_id IS NULL OR order_id IN ({marks}))"
     with _db() as db:
         files = [r["audio_file"] for r in db.execute(
             f"SELECT audio_file FROM returns WHERE {where} AND audio_file IS NOT NULL", order_ids)]

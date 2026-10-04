@@ -305,8 +305,9 @@ def list_orders():
 @app.post("/api/orders/reset", dependencies=[Depends(require_login)])
 def reset_orders():
     """Demo helper: clear the returns filed against the demo orders, so every item shows "Return"
-    again. Deletes those rows and their voice notes for good; they also leave the review queue
-    and the digest. Nothing else in the database is touched."""
+    again, plus returns attached to no order (left by earlier builds and tests). Deletes those rows
+    and their voice notes for good; they also leave the team view, the review queue and the digest.
+    Seeded demo rows and returns on other orders are not touched."""
     cleared, files = store.clear_orders([o["id"] for o in orders.ORDERS])
     for name in files:
         _drop_audio(name)
