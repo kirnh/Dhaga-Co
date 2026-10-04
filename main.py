@@ -211,6 +211,12 @@ def index(request: Request):
     return FileResponse("static/index.html" if authed(request) else "static/login.html")
 
 
+@app.get("/team")
+def team_page(request: Request):
+    """The Dhaga team's view: which department each return was routed to, and the Needs Review queue."""
+    return FileResponse("static/team.html" if authed(request) else "static/login.html")
+
+
 @app.post("/login")
 async def login(request: Request, password: str = Form(...)):
     if not APP_PASSWORD:
@@ -534,6 +540,47 @@ def returns_resolve(return_id: int, reason_code: str = Form(...), note: str = Fo
     if row is None:
         raise HTTPException(404, "No open item with that id (it may already be settled).")
     return row
+
+
+@app.get("/api/team/board", dependencies=[Depends(require_login)])
+def team_board():
+    """Every recent return, placed in the queue of the team that owns its reason.
+
+    Routing is the lookup in taxonomy.py (reason -> group -> owner); no model is asked.
+    A return with a second problem also appears, marked "also", in that problem's queue.
+    Unclear and unread returns sit in the Needs Review queue until a person settles them.
+    """
+    names = {(o["id"], i["sku"]): i["name"] for o in orders.ORDERS for i in o["items"]}
+    queues = {cat: {"category": cat, "department": label, "owner": owner,
+                    "needs_review": cat == taxonomy.UNCLEAR_CATEGORY, "items": []}
+              for cat, (label, owner, _items) in taxonomy.CATEGORIES.items()}
+
+    def card(row, reason, role, other=None):
+        return {
+            "id": row["id"], "created_at": row["created_at"], "role": role,   # main | also | review
+            "item": names.get((row.get("order_id"), row.get("sku"))), "order_id": row.get("order_id"),
+            "sku": row.get("sku"), "vendor": row.get("vendor"),
+            "reason": reason.label if reason else None,
+            "other_reason": other.label if other else None, "other_owner": other.owner if other else None,
+            "text": row["text"], "mode": row["input_mode"], "status": row["status"],
+            "review_hint": (taxonomy.REASONS[row["review_hint"]].label
+                            if row.get("review_hint") in taxonomy.REASONS else None),
+            "failed_step": row.get("failed_step"),
+            "decided_by": "team" if row.get("resolved_code") else "customer" if row.get("route") == "customer" else "system",
+        }
+
+    for row in store.recent():
+        code = row.get("resolved_code") or row.get("reason_code")
+        reason = taxonomy.REASONS.get(code) if code else None
+        if reason is None or taxonomy.is_unclear(code):      # pending, or the system would not guess
+            queues[taxonomy.UNCLEAR_CATEGORY]["items"].append(card(row, reason, "review"))
+            continue
+        second = None if row.get("resolved_code") else taxonomy.REASONS.get(row.get("secondary_code") or "")
+        queues[reason.category]["items"].append(card(row, reason, "main", second))
+        if second and second.category != reason.category:
+            queues[second.category]["items"].append(card(row, second, "also", reason))
+    ordered = sorted(queues.values(), key=lambda q: not q["needs_review"])   # the human queue first
+    return {"queues": ordered}
 
 
 @app.get("/api/returns/stats", dependencies=[Depends(require_login)])

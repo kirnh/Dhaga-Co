@@ -264,6 +264,13 @@ def stats() -> dict:
     }
 
 
+def recent(limit: int = 300) -> list[dict]:
+    """The newest live returns, newest first, for the team view."""
+    with _db() as db:
+        rows = db.execute("SELECT * FROM returns WHERE source = 'live' ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+    return [_row(r) for r in rows]
+
+
 def rows_since(since_iso: str, source: str = "live") -> list[dict]:
     """Classified returns on or after since_iso. source is 'live', 'demo' or 'all'."""
     if source not in ("live", "demo", "all"):

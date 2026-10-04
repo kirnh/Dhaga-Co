@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dhaga &amp; Co. Returns · Team view</title>
+<style>
+  :root {
+    --cloth:#f5f6fa; --card:#ffffff; --ink:#161a2e; --muted:#5d6380; --line:#d9dcea;
+    --indigo:#27348b; --indigo-soft:#e8ebf8; --ok:#17734a; --ok-soft:#e3f4ec;
+    --review:#8f5200; --review-soft:#fdf0d9; --fail:#a3211b; --fail-soft:#fbe7e5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --cloth:#10121c; --card:#191c2b; --ink:#eceef8; --muted:#a0a6c2; --line:#30354d;
+      --indigo:#9aa6ff; --indigo-soft:#232842; --ok:#6fd6a4; --ok-soft:#16302a;
+      --review:#f0b65a; --review-soft:#33270f; --fail:#ff9a92; --fail-soft:#3a1a18;
+    }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--cloth); color:var(--ink); font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  main { max-width:1240px; margin:0 auto; padding:20px 16px 56px; }
+  header { display:flex; justify-content:space-between; align-items:baseline; gap:12px; flex-wrap:wrap; border-bottom:2px dashed var(--indigo); padding-bottom:10px; }
+  h1 { font-size:22px; line-height:1.2; margin:0; letter-spacing:-.01em; }
+  h2 { font-size:17px; line-height:1.25; margin:0; }
+  .muted { color:var(--muted); font-size:13px; }
+  .hidden { display:none !important; }
+  a, .linkbtn { color:var(--muted); font-size:14px; text-decoration:underline; background:none; border:0; padding:0; cursor:pointer; font-family:inherit; }
+  .lead { margin:14px 0 18px; max-width:70ch; }
+  .board { display:grid; grid-template-columns:repeat(auto-fill, minmax(330px, 1fr)); gap:14px; align-items:start; }
+  .queue { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px; }
+  .queue.review { border-color:var(--review); grid-column:1 / -1; }
+  .queue-head { display:flex; justify-content:space-between; align-items:flex-start; gap:10px; }
+  .count { min-width:30px; text-align:center; padding:2px 9px; border-radius:999px; background:var(--indigo-soft); color:var(--indigo); font-weight:700; }
+  .queue.review .count { background:var(--review-soft); color:var(--review); }
+  .empty { margin:12px 0 2px; }
+  .items { display:grid; gap:10px; margin-top:12px; }
+  .queue.review .items { grid-template-columns:repeat(auto-fill, minmax(330px, 1fr)); }
+  .item { border-top:1px dashed var(--line); padding-top:10px; }
+  .queue.review .item { border:1px solid var(--line); border-radius:10px; padding:10px; }
+  .item b { font-size:15px; }
+  .said { background:var(--cloth); border-radius:8px; padding:8px 10px; margin:6px 0; white-space:pre-wrap; word-break:break-word; }
+  .tag { display:inline-block; font-size:12px; font-weight:700; padding:1px 8px; border-radius:999px; margin-left:6px; background:var(--indigo-soft); color:var(--indigo); }
+  .tag.also { background:var(--review-soft); color:var(--review); }
+  .settle { display:flex; gap:8px; margin-top:8px; }
+  select { flex:1; min-width:0; padding:8px; border:1px solid var(--line); border-radius:8px; background:var(--cloth); color:var(--ink); font:inherit; }
+  .settle button { padding:8px 14px; border:0; border-radius:8px; background:var(--indigo); color:#fff; font:inherit; font-weight:700; cursor:pointer; }
+  @media (prefers-color-scheme: dark) { .settle button { color:#10121c; } }
+  button:focus-visible, select:focus-visible, a:focus-visible { outline:2px solid var(--indigo); outline-offset:2px; }
+  .err { color:var(--fail); font-size:13px; margin-top:6px; }
+  #banner { background:var(--fail-soft); color:var(--fail); border:1px solid var(--fail); border-radius:10px; padding:10px 12px; margin:14px 0; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Dhaga &amp; Co. Returns · Team view</h1>
+    <span><a href="/">Customer screen</a> &nbsp; <button class="linkbtn" id="refresh" type="button">Refresh</button> &nbsp; <button class="linkbtn" id="signout" type="button">Sign out</button></span>
+  </header>
+  <p class="lead">Each return is placed in the queue of the team that owns its reason. The owner comes from a lookup table, not from the model. Returns the system would not guess wait in Needs Review until someone picks the reason. <span class="muted" id="updated"></span></p>
+  <div id="banner" class="hidden" role="alert"></div>
+  <div id="board" class="board" aria-live="polite"></div>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+let menu = [];
+
+function when(iso) {
+  const d = new Date(iso); if (isNaN(d)) return "";
+  return d.toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+}
+
+function reasonPicker(hintLabel) {
+  const sel = el("select"); sel.setAttribute("aria-label", "Reason");
+  const first = el("option", null, "Pick the reason"); first.value = ""; sel.appendChild(first);
+  menu.filter(c => !c.needs_review).forEach(c => {
+    const g = document.createElement("optgroup"); g.label = c.label + " → " + c.owner;
+    c.reasons.forEach(r => { const o = el("option", null, r.label); o.value = r.code; if (r.label === hintLabel) o.selected = true; g.appendChild(o); });
+    sel.appendChild(g);
+  });
+  return sel;
+}
+
+function itemCard(it, review) {
+  const box = el("div", "item");
+  const head = el("div");
+  head.appendChild(el("b", null, it.reason || (it.status === "pending" ? "Not read yet" : "Unclear")));
+  if (it.role === "also") head.appendChild(el("span", "tag also", "also mentioned"));
+  if (it.decided_by !== "system") head.appendChild(el("span", "tag", it.decided_by === "team" ? "settled by team" : "chosen by customer"));
+  box.appendChild(head);
+  const what = [it.item, it.order_id && "Order " + it.order_id, it.sku, it.vendor].filter(Boolean).join(" · ");
+  box.appendChild(el("div", "muted", (what || "No order attached") + " · " + when(it.created_at)));
+  if (it.text) box.appendChild(el("div", "said", (it.mode === "voice" ? "Heard: " : it.mode === "choice" ? "Note: " : "Typed: ") + it.text));
+  if (it.other_reason) box.appendChild(el("div", "muted",
+    (it.role === "also" ? "Main problem: " : "Also mentioned: ") + it.other_reason + " → " + it.other_owner));
+  if (review) {
+    if (it.status === "pending") box.appendChild(el("div", "muted", "The analysis failed at: " + (it.failed_step || "an earlier step") + ". The customer's words were kept."));
+    if (it.review_hint) box.appendChild(el("div", "muted", "The model's low-confidence guess: " + it.review_hint));
+    const row = el("div", "settle"), sel = reasonPicker(it.review_hint), btn = el("button", null, "Settle"), err = el("div", "err");
+    btn.type = "button";
+    btn.addEventListener("click", async () => {
+      err.textContent = "";
+      if (!sel.value) { err.textContent = "Pick a reason first."; return; }
+      btn.disabled = true;
+      try {
+        const fd = new FormData(); fd.append("reason_code", sel.value);
+        const r = await fetch("/api/returns/review/" + it.id + "/resolve", { method: "POST", body: fd });
+        if (r.status === 401) return location.reload();
+        if (!r.ok) throw new Error((await r.json()).detail || "Could not settle this.");
+        await load();
+      } catch (e) { err.textContent = e.message; btn.disabled = false; }
+    });
+    row.appendChild(sel); row.appendChild(btn); box.appendChild(row); box.appendChild(err);
+  }
+  return box;
+}
+
+function render(d) {
+  const board = $("board"); board.textContent = "";
+  d.queues.forEach(q => {
+    const card = el("section", "queue" + (q.needs_review ? " review" : ""));
+    const head = el("div", "queue-head"), left = el("div");
+    left.appendChild(el("h2", null, q.needs_review ? "Needs Review" : q.owner));
+    left.appendChild(el("div", "muted", q.needs_review ? "A person picks the reason. Nothing here was guessed." : q.department));
+    head.appendChild(left); head.appendChild(el("span", "count", String(q.items.length)));
+    card.appendChild(head);
+    if (!q.items.length) card.appendChild(el("p", "muted empty", q.needs_review ? "Nothing waiting." : "No returns routed here yet."));
+    const list = el("div", "items");
+    q.items.forEach(it => list.appendChild(itemCard(it, q.needs_review)));
+    card.appendChild(list); board.appendChild(card);
+  });
+  $("updated").textContent = "Updated " + new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) + ".";
+}
+
+async function load() {
+  try {
+    if (!menu.length) {
+      const t = await fetch("/api/returns/taxonomy");
+      if (t.status === 401) return location.reload();
+      menu = (await t.json()).categories;
+    }
+    const r = await fetch("/api/team/board");
+    if (r.status === 401) return location.reload();
+    if (!r.ok) throw new Error("board");
+    render(await r.json());
+    $("banner").classList.add("hidden");
+  } catch (e) {
+    $("banner").textContent = "We couldn't load the queues. Check the connection and press Refresh.";
+    $("banner").classList.remove("hidden");
+  }
+}
+
+$("refresh").addEventListener("click", load);
+$("signout").addEventListener("click", async () => { try { await fetch("/logout", { method: "POST" }); } catch (e) {} location.reload(); });
+load();
+// Keep the board current during a demo, but never while someone is choosing a reason.
+setInterval(() => { if (!document.hidden && document.activeElement.tagName !== "SELECT") load(); }, 10000);
+</script>
+</body>
+</html>
